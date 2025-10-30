@@ -7,11 +7,12 @@ from flask_wtf.csrf import CSRFProtect
 
 
 def _make_database_uri() -> str:
-    host = os.getenv("MYSQL_HOST", "127.0.0.1")
-    port = os.getenv("MYSQL_PORT", "3306")
-    user = os.getenv("MYSQL_USER", "root")
-    password = os.getenv("MYSQL_PASSWORD", "")
-    database = os.getenv("MYSQL_DB", "student_info")
+    host = os.getenv("MYSQLHOST") or os.getenv("MYSQL_HOST", "127.0.0.1")
+    port = os.getenv("MYSQLPORT") or os.getenv("MYSQL_PORT", "3306")
+    user = os.getenv("MYSQLUSER") or os.getenv("MYSQL_USER", "root")
+    password = os.getenv("MYSQLPASSWORD") or os.getenv("MYSQL_PASSWORD", "")
+    database = os.getenv("MYSQLDATABASE") or os.getenv("MYSQL_DB", "student_info")
+    
     return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
 
 

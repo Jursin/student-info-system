@@ -6,13 +6,9 @@
 - MySQL 8.x
 - openpyxl（Excel 导出）
 
----
-
 ### 功能概览
 - 学生端：提交/更新个人信息。
 - 管理端：登录后批量导入、导出、搜索、增改学生信息。
-
----
 
 ### ⚡ 本地一键快速启动指南
 
@@ -90,15 +86,11 @@
    - 配置 nginx 反向代理（见示例 nginx 配置段）。
    - HTTPS 推荐用 certbot。
 
----
-
 ### 部署技巧与安全建议
 - 管理员实现 DB 持久化，强密码策略。
 - 建议 MySQL 独立账号、仅该库操作权限。
 - 启用 HTTPS，生产用独立 Gunicorn workers，尽量用 systemd/supervisor 托管。
 - 日志仅记录关键信息。
-
----
 
 ### 常用维护/初始化命令
 - 初始化数据库及表+补齐字段
@@ -106,11 +98,7 @@
 - 创建初始管理员 `python run.py create-admin`
 - 新增管理员/改密详见 scripts/add_admin.py 和 scripts/reset_admin_pwd.py 示例。
 
----
-
 如有部署异常/扩展需求请按实际服务器环境调整 python/sql/nginx/gunicorn 配置，或联系开发/运维同事协助。
-
----
 
 ### Railway/Machine/Cloud 一键部署须知（适用 Serverless/云平台）
 1. 推荐将本项目推送至 GitHub 后，绑定至 Railway、新建 Web 服务。
@@ -119,8 +107,6 @@
 4. Railway 环境通常无需建表指令，首次启动会自动建表。如需初始化管理员可绑定 Github Workflow 或 PR 后台运行 `python run.py create-admin`。
 5. 如果用 Railway 的 MySQL 插件，需在数据库插件页面查找连接串填入对应环境变量。
 6. 生产部署可通过 Railway 变量面板快速更换数据源和密钥。
-
----
 
 ### 环境变量（无论哪里部署均需配置，不应 hardcode 于 settings...）
 - SECRET_KEY
