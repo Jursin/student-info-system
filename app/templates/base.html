@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}统一身份信息管理系统{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@primer/css@21.0.0/dist/primer.css">
+    <link rel="icon" href="../static/favicon.png" type="image/png">
+    <style>
+        :root {
+            --color-canvas-default: #ffffff;
+            --color-canvas-subtle: #f6f8fa;
+            --color-border-default: #d1d9e0;
+            --color-border-muted: #d8dee4;
+            --color-fg-default: #1f2328;
+            --color-fg-muted: #656d76;
+            --color-accent-emphasis: #0969da;
+            --color-accent-fg: #0969da;
+            --color-success-emphasis: #1a7f37;
+            --color-danger-emphasis: #d1242f;
+            --color-warning-emphasis: #9a6700;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+            background-color: var(--color-canvas-subtle);
+            color: var(--color-fg-default);
+            line-height: 1.5;
+        }
+        
+        .Header {
+            background-color: var(--color-canvas-default);
+            border-bottom: 1px solid var(--color-border-default);
+            padding: 10px 0;
+            margin-bottom: 20px;
+        }
+        
+        .Header-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .school-logo {
+            height: 48px;
+            width: auto;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+        
+        .school-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--color-fg-default);
+            margin: 0;
+        }
+        
+        .container-lg {
+            max-width: 1700px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        .container-lg.admin {
+            max-width: 1700px;
+            padding: 0 20px;
+        }
+        
+        .Box {
+            background-color: var(--color-canvas-default);
+            border: 1px solid var(--color-border-default);
+            border-radius: 6px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        
+        .FormControl {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--color-border-default);
+            border-radius: 6px;
+            font-size: 14px;
+            background-color: var(--color-canvas-default);
+        }
+        select.FormControl {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg width='16' height='16' viewBox='0 0 16 16' fill='%23656d76' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M4 6l4 4 4-4H4z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            padding-right: 28px;
+        }
+        input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--color-accent-emphasis);
+        }
+        
+        .FormControl:focus {
+            outline: none;
+            border-color: var(--color-accent-emphasis);
+            box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 16px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: var(--color-accent-emphasis);
+            color: white;
+            border-color: var(--color-accent-emphasis);
+        }
+        
+        .btn-primary:hover {
+            background-color: #0860ca;
+            border-color: #0860ca;
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            color: var(--color-fg-default);
+            border-color: var(--color-border-default);
+        }
+        
+        .btn-outline:hover {
+            background-color: var(--color-canvas-subtle);
+        }
+        
+        .btn-danger {
+            background-color: var(--color-danger-emphasis);
+            color: white;
+            border-color: var(--color-danger-emphasis);
+        }
+        
+        .btn-danger:hover {
+            background-color: #fbdada !important;
+        }
+        
+        .btn-success {
+            background-color: var(--color-success-emphasis);
+            color: white;
+            border-color: var(--color-success-emphasis);
+        }
+        
+        .btn-success:hover {
+            background-color: #1a7f37;
+            border-color: #1a7f37;
+        }
+        
+        .Alert {
+            padding: 12px 24px;
+            border-radius: 6px;
+            margin: 16px 0 16px auto;
+            border: 1px solid;
+            max-width: 400px;
+            min-width: 180px;
+            width: fit-content;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .Alert--success {
+            background-color: #dafbe1;
+            border-color: #1a7f37;
+            color: #0d1117;
+        }
+        
+        .Alert--danger {
+            background-color: #ffebe9;
+            border-color: #d1242f;
+            color: #0d1117;
+        }
+        
+        .Alert--warning {
+            background-color: #fff8c5;
+            border-color: #9a6700;
+            color: #0d1117;
+        }
+        
+        .Alert--info {
+            background-color: #ddf4ff;
+            border-color: #0969da;
+            color: #0d1117;
+        }
+        
+        .Table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        
+        .Table tr:last-child td {
+            border-bottom: none;
+        }
+        .Table th,
+        .Table td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid var(--color-border-muted);
+            white-space: nowrap; /* 桌面端不换行，避免文字竖排 */
+        }
+        
+        .Table th {
+            background: #f6f8fa;
+            border-top: 1px solid var(--color-border-default);
+        }
+        .Table th:first-child, .Table td:first-child {
+            border-left: 1px solid var(--color-border-default);
+        }
+        .Table th:last-child, .Table td:last-child {
+            border-right: 1px solid var(--color-border-default);
+        }
+        .Table th {
+            background-color: var(--color-canvas-subtle);
+            font-weight: 600;
+        }
+        
+        .Pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 24px 0;
+        }
+        
+        .Pagination-item {
+            padding: 8px 12px;
+            border: 1px solid var(--color-border-default);
+            border-radius: 6px;
+            text-decoration: none;
+            color: var(--color-fg-default);
+        }
+        
+        .Pagination-item:hover {
+            background-color: var(--color-canvas-subtle);
+        }
+        
+        .Pagination-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .FormGroup {
+            margin-bottom: 16px;
+        }
+        
+        .FormGroup-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--color-fg-default);
+        }
+        
+        .FormGroup-help {
+            font-size: 12px;
+            color: var(--color-fg-muted);
+            margin-top: 4px;
+        }
+        
+        .Grid {
+            display: grid;
+            gap: 16px;
+        }
+        
+        .Grid--2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .Grid--3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .TableWrap {
+            overflow-x: auto;
+            background: var(--color-canvas-default);
+            border: 1px solid var(--color-border-default);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .Grid--2,
+            .Grid--3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .container-lg {
+                padding: 0 12px;
+            }
+            
+            .Box {
+                padding: 16px;
+                margin: 16px 0;
+            }
+            
+            .Table { font-size: 12px; min-width: 1100px; }
+            .Table th, .Table td { padding: 8px; }
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: var(--color-canvas-default);
+            border-radius: 6px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--color-fg-muted);
+        }
+        
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 16px 0;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .checkbox-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="Header">
+        <div class="container-lg">
+        <div class="Header-item">
+            <a href="/"><img src="{{ url_for('static', filename='img.png') }}" alt="学校Logo" class="school-logo"></a>
+            <div class="school-name">统一身份信息管理系统</div>
+        </div>
+        </div>
+    </div>
+    
+    <div class="container-lg">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="Alert Alert--{{ 'success' if category == 'success' else 'danger' if category == 'danger' else 'warning' if category == 'warning' else 'info' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

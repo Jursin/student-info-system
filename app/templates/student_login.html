@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}学生登录 - 统一身份信息管理系统{% endblock %}
+
+{% block content %}
+<div class="Box" style="max-width: 540px; margin: 64px auto; padding: 40px 40px; font-size: 18px;">
+    <h2 style="margin-bottom: 24px; text-align: center;">学生登录</h2>
+    
+    <form method="post" style="font-size: 18px;">
+        {{ form.csrf_token }}
+        
+        <div class="FormGroup">
+            <label class="FormGroup-label" for="student_id">学号</label>
+            {{ form.student_id(class_='FormControl', required=True, minlength=10, maxlength=10, placeholder='请输入10位学号', style='font-size:16px;') }}
+        </div>
+        
+        <div class="FormGroup">
+            <label class="FormGroup-label" for="verify_last4">校验码</label>
+            {{ form.verify_last4(class_='FormControl', required=True, minlength=4, maxlength=4, placeholder='请输入身份证后四位', style='font-size:16px;') }}
+        </div>
+        
+        <div style="display: flex; gap: 16px; margin-top: 32px; justify-content:center;">
+            <button class="btn btn-primary" type="submit" style="width:140px; height:46px; font-size: 18px;">登录</button>
+            <a class="btn btn-outline" href="/create" style="width:140px; height:46px; font-size: 18px;">信息填写</a>
+        </div>
+    </form>
+</div>
+{% if login_tip %}
+<div class="Alert Alert--info" style="margin: 24px auto 0;max-width:400px;text-align:center;">
+  {{ login_tip }}
+</div>
+{% endif %}
+{% endblock %}

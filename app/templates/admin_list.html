@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}学生信息列表 - 统一身份信息管理系统{% endblock %}
+
+{% block content %}
+<div class="container-lg admin">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
+        <h2 style="margin: 0;">学生信息列表</h2>
+        <div style="display: flex; gap: 12px;">
+            <a class="btn btn-outline" href="/">学生端</a>
+            <a class="btn btn-outline" href="/admin/logout">退出</a>
+        </div>
+    </div>
+
+    <!-- 筛选表单 -->
+    <form method="get" style="margin-bottom: 16px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;">
+            <div class="FormGroup" style="min-width:180px;">
+                <label class="FormGroup-label">搜索</label>
+                <input class="FormControl" name="q" placeholder="搜索内容" value="{{ q }}">
+            </div>
+            <div class="FormGroup">
+                <label class="FormGroup-label">性别</label>
+                <select class="FormControl" name="gender">
+                    <option value="">全部</option>
+                    <option value="男" {% if gender=='男' %}selected{% endif %}>男</option>
+                    <option value="女" {% if gender=='女' %}selected{% endif %}>女</option>
+                </select>
+            </div>
+            <div class="FormGroup">
+                <label class="FormGroup-label">专业</label>
+                <select class="FormControl" name="major">
+                    <option value="">全部</option>
+                    <option value="物理学" {% if major=='物理学' %}selected{% endif %}>物理学</option>
+                    <option value="光电信息科学与工程" {% if major=='光电信息科学与工程' %}selected{% endif %}>光电信息科学与工程</option>
+                    <option value="量子信息科学" {% if major=='量子信息科学' %}selected{% endif %}>量子信息科学</option>
+                </select>
+            </div>
+            <div class="FormGroup" style="min-width:120px;">
+                <label class="FormGroup-label">班级</label>
+                <input class="FormControl" name="clazz" placeholder="多个班级，用逗号分隔" value="{{ clazz }}">
+            </div>
+            <div style="display: flex; gap: 8px; align-items: flex-end; position: relative; top: -14px;">
+                <button class="btn btn-primary" type="submit" style="width:90px;">筛选</button>
+                <a class="btn btn-outline" href="{{ url_for('admin.list_students') }}" style="width:90px;">清空</a>
+            </div>
+        </div>
+    </form>
+
+    <!-- 批量操作 -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; background-color: var(--color-canvas-subtle); border-radius: 6px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn btn-danger" onclick="deleteSelected()" disabled id="deleteBtn">删除选中</button>
+            <button class="btn btn-success" onclick="showExportModal()">导出数据</button>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <form method="post" action="{{ url_for('admin.import_bulk') }}" enctype="multipart/form-data" style="display: flex; gap: 8px; align-items: center;">
+                {{ import_form.csrf_token }}
+                {{ import_form.file(class_='FormControl', accept='.xlsx,.xlsm,.csv,.txt', style='width: auto;') }}
+                <button class="btn btn-outline" type="submit">批量导入</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 数据表格 -->
+    <div class="TableWrap" style="padding: 20px;">
+        <table class="Table">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll" onchange="toggleAll()"></th>
+                        <th>学号</th>
+                        <th>姓名</th>
+                        <th>性别</th>
+                        <th>籍贯</th>
+                        <th>身份证号码</th>
+                        <th>电话号码</th>
+                        <th>专业</th>
+                        <th>班级</th>
+                        <th>行政班级</th>
+                        <th>创建时间</th>
+                        <th>更新时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in students %}
+                    <tr style="border-bottom:1px solid var(--color-border-default);">
+                        <td><input type="checkbox" name="student_ids" value="{{ s.id }}" class="student-checkbox" onchange="updateDeleteBtn()"></td>
+                        <td>{{ s.student_id }}</td>
+                        <td>{{ s.name }}</td>
+                        <td>{{ s.gender }}</td>
+                        <td>{{ s.hometown }}</td>
+                        <td>{{ s.id_card }}</td>
+                        <td>{{ s.phone }}</td>
+                        <td>{{ s.major }}</td>
+                        <td>{{ s.clazz }}</td>
+                        <td>{{ s.admin_class }}</td>
+                        <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M:%S') if s.created_at }}</td>
+                        <td>{{ s.updated_at.strftime('%Y-%m-%d %H:%M:%S') if s.updated_at }}</td>
+                        <td><a class="btn btn-outline" href="{{ url_for('admin.edit_student', student_pk=s.id) }}" style="padding: 4px 8px; font-size: 12px;">编辑</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+    </div>
+
+    <!-- 分页 -->
+    {% if pagination %}
+    <div class="Pagination">
+        <a class="Pagination-item {% if not pagination.has_prev %}disabled{% endif %}" 
+           href="{{ url_for('admin.list_students', q=q, gender=gender, major=major, clazz=clazz, page=pagination.prev_num) }}">
+            上一页
+        </a>
+        <span class="Pagination-item disabled">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+        <a class="Pagination-item {% if not pagination.has_next %}disabled{% endif %}" 
+           href="{{ url_for('admin.list_students', q=q, gender=gender, major=major, clazz=clazz, page=pagination.next_num) }}">
+            下一页
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 导出字段选择模态框 -->
+<div class="modal" id="exportModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">选择导出字段</h3>
+            <button class="modal-close" onclick="hideExportModal()">&times;</button>
+        </div>
+        <div>
+            <div class="FormGroup">
+                <label class="FormGroup-label">导出格式</label>
+                <select class="FormControl" id="exportFormat">
+                    <option value="xlsx">Excel (.xlsx)</option>
+                    <option value="csv">CSV (.csv)</option>
+                </select>
+            </div>
+            
+            <div class="checkbox-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="student_id" checked disabled>
+                    <label for="student_id">学号 (必选)</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="name" checked disabled>
+                    <label for="name">姓名 (必选)</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="gender" checked>
+                    <label for="gender">性别</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="hometown" checked>
+                    <label for="hometown">籍贯</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="id_card" checked>
+                    <label for="id_card">身份证号码</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="phone" checked>
+                    <label for="phone">电话号码</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="major" checked>
+                    <label for="major">专业</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="clazz" checked>
+                    <label for="clazz">班级</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="admin_class" checked>
+                    <label for="admin_class">行政班级</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="created_at" checked>
+                    <label for="created_at">创建时间</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="updated_at" checked>
+                    <label for="updated_at">更新时间</label>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 12px; margin-top: 24px;">
+                <button class="btn btn-primary" onclick="doExport()" style="flex: 1;">导出</button>
+                <button class="btn btn-outline" onclick="hideExportModal()">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认表单 -->
+<form method="post" action="{{ url_for('admin.delete_students') }}" id="deleteForm" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.student-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateDeleteBtn();
+}
+
+function updateDeleteBtn() {
+    const checked = document.querySelectorAll('.student-checkbox:checked');
+    const deleteBtn = document.getElementById('deleteBtn');
+    deleteBtn.disabled = checked.length === 0;
+}
+
+function deleteSelected() {
+    const checked = document.querySelectorAll('.student-checkbox:checked');
+    if (checked.length === 0) return;
+    
+    if (confirm(`确定要删除选中的 ${checked.length} 条记录吗？`)) {
+        const form = document.getElementById('deleteForm');
+        checked.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'student_ids';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+        form.submit();
+    }
+}
+
+function showExportModal() {
+    document.getElementById('exportModal').style.display = 'block';
+}
+
+function hideExportModal() {
+    document.getElementById('exportModal').style.display = 'none';
+}
+
+function doExport() {
+    const format = document.getElementById('exportFormat').value;
+    const fields = Array.from(document.querySelectorAll('#exportModal input[type="checkbox"]:checked'))
+        .map(cb => cb.id);
+    
+    if (fields.length === 0) {
+        alert('请至少选择一个字段');
+        return;
+    }
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('format', format);
+    fields.forEach(field => params.append('fields', field));
+    
+    window.location.href = `{{ url_for('admin.export_excel') }}?` + params.toString();
+}
+
+// 点击模态框外部关闭
+document.getElementById('exportModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideExportModal();
+    }
+});
+</script>
+{% endblock %}

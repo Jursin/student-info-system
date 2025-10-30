@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}信息更新 - 统一身份信息管理系统{% endblock %}
+
+{% block content %}
+<div class="Box" style="max-width: 800px; margin: 40px auto;">
+    <h2 style="margin-bottom: 24px; text-align: center;">信息更新</h2>
+    
+    <div style="background-color: var(--color-canvas-subtle); padding: 12px; border-radius: 6px; margin-bottom: 24px; text-align: center;">
+        <strong>当前学号：{{ stu.student_id }}</strong>
+    </div>
+    
+    <form method="post">
+        {{ form.csrf_token }}
+        
+        <div class="Grid Grid--2">
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="name">姓名</label>
+                {{ form.name(class_='FormControl', required=True, placeholder='请输入2-4个中文姓名') }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="gender">性别</label>
+                {{ form.gender(class_='FormControl', required=True) }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="id_card">身份证号码</label>
+                {{ form.id_card(class_='FormControl', required=True, minlength=18, maxlength=18, placeholder='请输入18位身份证号码') }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="phone">电话号码</label>
+                {{ form.phone(class_='FormControl', required=True, minlength=11, maxlength=11, placeholder='请输入11位手机号') }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="major">专业</label>
+                {{ form.major(class_='FormControl', required=True) }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="clazz">班级</label>
+                {{ form.clazz(class_='FormControl', required=True, minlength=5, maxlength=5, placeholder='请输入5位班级号') }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="hometown">籍贯</label>
+                {{ form.hometown(class_='FormControl', required=True, maxlength=100, placeholder='如 XX 省 XX 市') }}
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 12px; margin-top: 24px; justify-content:center;">
+            <button class="btn btn-primary" type="submit" style="width:100px;">更新</button>
+            <a class="btn btn-outline" href="/logout" style="width:100px;">退出</a>
+        </div>
+    </form>
+</div>
+
+<script>
+// 无JS逻辑（籍贯改为手动输入）
+</script>
+{% endblock %}

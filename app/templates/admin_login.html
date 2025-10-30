@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}管理员登录 - 统一身份信息管理系统{% endblock %}
+
+{% block content %}
+<div class="Box" style="max-width: 540px; margin: 64px auto; padding: 40px 40px; font-size: 18px;">
+    <h2 style="margin-bottom: 24px; text-align: center;">管理员登录</h2>
+    
+    <form method="post" style="font-size: 18px;">
+        {{ form.csrf_token }}
+        
+        <div class="FormGroup">
+            <label class="FormGroup-label" for="username">用户名</label>
+            {{ form.username(class_='FormControl', required=True, placeholder='请输入用户名', style='font-size:16px;') }}
+        </div>
+        
+        <div class="FormGroup">
+            <label class="FormGroup-label" for="password">密码</label>
+            {{ form.password(class_='FormControl', required=True, placeholder='请输入密码', style='font-size:16px;') }}
+        </div>
+        
+        <div style="display: flex; gap: 16px; margin-top: 32px; justify-content:center;">
+            <button class="btn btn-primary" type="submit" style="width:140px; height:46px; font-size: 18px;">登录</button>
+            <a class="btn btn-outline" href="/" style="width:140px; height:46px; font-size: 18px;">返回学生端</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
