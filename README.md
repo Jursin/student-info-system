@@ -109,3 +109,24 @@
 ---
 
 如有部署异常/扩展需求请按实际服务器环境调整 python/sql/nginx/gunicorn 配置，或联系开发/运维同事协助。
+
+---
+
+### Railway/Machine/Cloud 一键部署须知（适用 Serverless/云平台）
+1. 推荐将本项目推送至 GitHub 后，绑定至 Railway、新建 Web 服务。
+2. 项目所有敏感信息如 `SECRET_KEY`、`MYSQL_HOST`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB` 等须全部通过 Railway 的环境变量面板配置。
+3. 不要上传/提交 .env 文件，仅提供 .env.example 示例供开发者参照。
+4. Railway 环境通常无需建表指令，首次启动会自动建表。如需初始化管理员可绑定 Github Workflow 或 PR 后台运行 `python run.py create-admin`。
+5. 如果用 Railway 的 MySQL 插件，需在数据库插件页面查找连接串填入对应环境变量。
+6. 生产部署可通过 Railway 变量面板快速更换数据源和密钥。
+
+---
+
+### 环境变量（无论哪里部署均需配置，不应 hardcode 于 settings...）
+- SECRET_KEY
+- MYSQL_HOST
+- MYSQL_USER
+- MYSQL_PASSWORD
+- MYSQL_DB
+
+*建议始终通过云平台控制台配置各关键的环境变量，严禁明文写进仓库与 settings 文件。*
