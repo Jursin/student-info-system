@@ -1,15 +1,5 @@
 .venv
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 .env
-.env.*
 .DS_Store
-*.sqlite3
-*.log
-.cache/
-*.egg-info/
-build/
-dist/
-node_modules/

@@ -51,14 +51,16 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; background-color: var(--color-canvas-subtle); border-radius: 6px;">
         <div style="display: flex; gap: 12px; align-items: center;">
             <button class="btn btn-danger" onclick="deleteSelected()" disabled id="deleteBtn">删除选中</button>
-            <button class="btn btn-success" onclick="showExportModal()">导出数据</button>
+            <span id="selectedCount" style="color: var(--color-fg-muted);">已选 0 条</span>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
-            <form method="post" action="{{ url_for('admin.import_bulk') }}" enctype="multipart/form-data" style="display: flex; gap: 8px; align-items: center;">
+            <a class="btn btn-primary" href="{{ url_for('admin.create_student') }}">添加数据</a>
+            <button class="btn btn-success" onclick="showExportModal()">导出数据</button>
+            <form id="importForm" method="post" action="{{ url_for('admin.import_bulk') }}" enctype="multipart/form-data" style="display: none;">
                 {{ import_form.csrf_token }}
-                {{ import_form.file(class_='FormControl', accept='.xlsx,.xlsm,.csv,.txt', style='width: auto;') }}
-                <button class="btn btn-outline" type="submit">批量导入</button>
+                {{ import_form.file(id='importFile', accept='.xlsx,.xlsm,.csv,.txt') }}
             </form>
+            <button class="btn btn-outline" type="button" onclick="triggerImport()">批量导入</button>
         </div>
     </div>
 
@@ -210,6 +212,8 @@ function updateDeleteBtn() {
     const checked = document.querySelectorAll('.student-checkbox:checked');
     const deleteBtn = document.getElementById('deleteBtn');
     deleteBtn.disabled = checked.length === 0;
+    const sel = document.getElementById('selectedCount');
+    if (sel) sel.textContent = `已选 ${checked.length} 条`;
 }
 
 function deleteSelected() {
@@ -237,6 +241,20 @@ function hideExportModal() {
     document.getElementById('exportModal').style.display = 'none';
 }
 
+function triggerImport() {
+    const input = document.getElementById('importFile');
+    input.value = '';
+    input.click();
+}
+
+document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'importFile') {
+        if (e.target.files && e.target.files.length > 0) {
+            document.getElementById('importForm').submit();
+        }
+    }
+});
+
 function doExport() {
     const format = document.getElementById('exportFormat').value;
     const fields = Array.from(document.querySelectorAll('#exportModal input[type="checkbox"]:checked'))
@@ -250,8 +268,13 @@ function doExport() {
     const params = new URLSearchParams(window.location.search);
     params.set('format', format);
     fields.forEach(field => params.append('fields', field));
+    // 追加选中行的 student_ids
+    const checked = Array.from(document.querySelectorAll('.student-checkbox:checked'));
+    checked.forEach(cb => params.append('student_ids', cb.value));
     
+    // 触发导出并关闭面板
     window.location.href = `{{ url_for('admin.export_excel') }}?` + params.toString();
+    hideExportModal();
 }
 
 // 点击模态框外部关闭

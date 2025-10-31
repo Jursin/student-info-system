@@ -1,12 +1,12 @@
 import io
 import os
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, current_app
 from sqlalchemy import or_
 from ..extensions import db
 from ..models import Student, Admin
 from openpyxl import Workbook
-from ..forms import BulkImportForm, AdminLoginForm, StudentEditForm
+from ..forms import BulkImportForm, AdminLoginForm, StudentEditForm, StudentCreateForm
 from werkzeug.utils import secure_filename
 import csv
 
@@ -70,7 +70,7 @@ def list_students():
     if clazz_list:
         query = query.filter(Student.clazz.in_(clazz_list))
 
-    pagination = query.order_by(Student.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = query.order_by(Student.student_id.asc()).paginate(page=page, per_page=per_page, error_out=False)
     import_form = BulkImportForm()
     current_gender = genders[0] if genders else ""
     current_major = majors[0] if majors else ""
@@ -185,40 +185,206 @@ def import_bulk():
 
     filename = secure_filename(file.filename)
     ext = os.path.splitext(filename)[1].lower()
+    current_app.logger.info("[IMPORT] Start import: filename=%s, ext=%s", filename, ext)
 
     rows = []
     try:
+        headers = []
         if ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]:
             from openpyxl import load_workbook
-            wb = load_workbook(file)
+            wb = load_workbook(file, data_only=True)
             ws = wb.active
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i == 0:
-                    continue
+            # 读取表头（第一行，非空）
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=False))
+            headers = [ (c.value or "").strip() if isinstance(c.value, str) else ("" if c.value is None else str(c.value).strip()) for c in header_row ]
+            current_app.logger.info("[IMPORT] Detected headers (xlsx): %s", headers)
+            # 读取数据行，保留单元格对象以判断类型
+            for row in ws.iter_rows(min_row=2, values_only=False):
                 rows.append(row)
+            current_app.logger.info("[IMPORT] Loaded %d data rows from Excel", len(rows))
         elif ext in [".csv", ".txt"]:
             file.stream.seek(0)
             text = file.stream.read().decode("utf-8-sig")
-            for i, row in enumerate(csv.reader(text.splitlines())):
-                if i == 0:
-                    continue
-                rows.append(row)
+            csv_iter = csv.reader(text.splitlines())
+            try:
+                headers = next(csv_iter, [])
+            except StopIteration:
+                headers = []
+            current_app.logger.info("[IMPORT] Detected headers (csv): %s", headers)
+            rows = list(csv_iter)
+            current_app.logger.info("[IMPORT] Loaded %d data rows from CSV/TXT", len(rows))
         else:
             flash("不支持的文件格式", "danger")
+            current_app.logger.warning("[IMPORT] Unsupported file extension: %s", ext)
             return redirect(url_for("admin.list_students"))
     except Exception as e:
         flash(f"文件读取失败: {e}", "danger")
+        current_app.logger.exception("[IMPORT] Failed to read file: %s", e)
         return redirect(url_for("admin.list_students"))
 
-    # 期望列顺序：姓名、性别、学号、身份证号码、电话号码、专业、班级
+    # 允许缺列为空，多余列忽略；忽略“行政班级”列，自动生成
+    # 支持表头中文：姓名、性别、学号、身份证号码、电话号码/电话、专业、班级、籍贯、行政班级（忽略）
+    key_alias = {
+        "姓名": "name",
+        "性别": "gender",
+        "学号": "student_id",
+        "身份证": "id_card",
+        "身份证号码": "id_card",
+        "电话": "phone",
+        "电话号码": "phone",
+        "专业": "major",
+        "班级": "clazz",
+        "籍贯": "hometown",
+        "行政班级": "admin_class_ignored",
+    }
+    # 规范化表头 -> 字段名（去空白、大小写、BOM、常见中英对照）
+    def _norm_str(s):
+        if s is None:
+            return ""
+        s = str(s).strip().lstrip("\ufeff").lower()
+        return s
+    header_alias_ext = {
+        "name": "name",
+        "gender": "gender",
+        "student_id": "student_id",
+        "studentid": "student_id",
+        "id": "student_id",
+        "id_card": "id_card",
+        "idcard": "id_card",
+        "identity": "id_card",
+        "phone": "phone",
+        "mobile": "phone",
+        "tel": "phone",
+        "major": "major",
+        "class": "clazz",
+        "clazz": "clazz",
+        "class_no": "clazz",
+        "hometown": "hometown",
+        "admin_class": "admin_class_ignored",
+        "adminclass": "admin_class_ignored",
+    }
+    norm_headers = []
+    for h in headers:
+        raw = _norm_str(h)
+        # 先中文别名，再英文别名
+        mapped = key_alias.get(h if isinstance(h, str) else h, "")
+        if not mapped:
+            mapped = header_alias_ext.get(raw, "")
+        norm_headers.append(mapped)
+    current_app.logger.info("[IMPORT] Normalized headers: %s", norm_headers)
+    if not any(norm_headers):
+        # 尝试位置推断：取首个非空数据行的列数
+        def _row_values_len(rows_it, is_excel: bool):
+            for r in rows_it:
+                if is_excel:
+                    vals = [c.value for c in r]
+                else:
+                    vals = ["" if x is None else str(x).strip() for x in r]
+                if any(x not in (None, "") for x in vals):
+                    return len(vals), vals
+            return 0, []
+        is_excel = ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]
+        length, first_vals = _row_values_len(rows, is_excel)
+        # rows 被消耗了，需重新加载；为简单起见不消耗，改为再次计算
+        if is_excel:
+            # 重新获取长度不消耗 rows：直接用第一行的长度
+            try:
+                length = len(rows[0]) if rows else 0
+                first_vals = [c.value for c in rows[0]] if rows else []
+            except Exception:
+                length = 0
+                first_vals = []
+        else:
+            length = len(rows[0]) if rows else 0
+            first_vals = ["" if x is None else str(x).strip() for x in (rows[0] if rows else [])]
+        default_order = ["name", "gender", "student_id", "id_card", "phone", "major", "clazz", "hometown"]
+        # 如果第一列像序号，则前置一个空映射跳过
+        lead_empty = 1 if (first_vals and str(first_vals[0]).strip().isdigit() and length >= 2) else 0
+        norm_headers = ([""] * lead_empty) + default_order
+        norm_headers = norm_headers[:length]
+        current_app.logger.warning("[IMPORT] Using positional header mapping: %s", norm_headers)
+
     inserted, updated, failed = 0, 0, 0
-    for row in rows:
+    # 记录本次导入过程中新增但尚未提交的 student_id -> Student 对象，避免同一文件中重复学号导致唯一键冲突
+    pending_new_by_sid = {}
+    for idx, row in enumerate(rows, start=2):  # 数据从第2行开始
         try:
-            name, gender, student_id, id_card, phone, major, clazz = [str(x).strip() if x is not None else "" for x in row[:7]]
-            if not all([name, gender, student_id, id_card, phone, major, clazz]):
+            values = {}
+            # Excel: row 是单元格对象列表；CSV: row 是字符串列表
+            if ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]:
+                cells = row
+                # 空行跳过（不计失败）
+                if not any(c.value not in (None, "") for c in cells):
+                    continue
+                for idx, field in enumerate(norm_headers):
+                    if not field or field == "admin_class_ignored":
+                        continue
+                    if idx >= len(cells):
+                        values[field] = ""
+                        continue
+                    cell = cells[idx]
+                    cv = cell.value
+                    if field in ("student_id", "id_card", "phone", "clazz"):
+                        # 强制转字符串并做必要补零
+                        if cv is None:
+                            s = ""
+                        elif isinstance(cv, (int, float)):
+                            # 避免 1.0 之类格式
+                            iv = int(cv)
+                            s = str(iv)
+                        else:
+                            s = str(cv).strip()
+                        if field == "student_id":
+                            s = s.zfill(10) if s else s
+                        elif field == "id_card":
+                            s = s.zfill(18) if s and len(s) < 18 and s.isdigit() else s
+                        elif field == "phone":
+                            s = s.zfill(11) if s and len(s) < 11 and s.isdigit() else s
+                        elif field == "clazz":
+                            s = s.zfill(5) if s and len(s) < 5 and s.isdigit() else s
+                        values[field] = s
+                    else:
+                        values[field] = "" if cv is None else str(cv).strip()
+            else:  # CSV/TXT
+                cells = ["" if x is None else str(x).strip() for x in row]
+                if not any(cells):
+                    continue
+                for idx, field in enumerate(norm_headers):
+                    if not field or field == "admin_class_ignored":
+                        continue
+                    v = cells[idx] if idx < len(cells) else ""
+                    if field == "student_id":
+                        v = v.zfill(10) if v and v.isdigit() and len(v) < 10 else v
+                    elif field == "id_card":
+                        v = v.zfill(18) if v and v.isdigit() and len(v) < 18 else v
+                    elif field == "phone":
+                        v = v.zfill(11) if v and v.isdigit() and len(v) < 11 else v
+                    elif field == "clazz":
+                        v = v.zfill(5) if v and v.isdigit() and len(v) < 5 else v
+                    values[field] = v
+
+            name = values.get("name", "")
+            gender = values.get("gender", "")
+            student_id = values.get("student_id", "")
+            id_card = values.get("id_card", "")
+            phone = values.get("phone", "")
+            major = values.get("major", "")
+            clazz = values.get("clazz", "")
+            hometown = values.get("hometown", "")
+
+            # 仅要求识别标识和基本姓名，其余字段若缺失则留空
+            if not all([student_id, name]):
                 failed += 1
+                current_app.logger.warning(
+                    "[IMPORT] Row %d failed required check: values=%s", idx, values
+                )
                 continue
-            stu = Student.query.filter_by(student_id=student_id).first()
+
+            # 先检查本批次新增缓存，再查询数据库；使用 no_autoflush 防止查询触发未提交对象的提前 flush
+            stu = pending_new_by_sid.get(student_id)
+            if stu is None:
+                with db.session.no_autoflush:
+                    stu = Student.query.filter_by(student_id=student_id).first()
             if stu:
                 stu.name = name
                 stu.gender = gender
@@ -226,9 +392,12 @@ def import_bulk():
                 stu.phone = phone
                 stu.major = major
                 stu.clazz = clazz
+                stu.hometown = hometown or ""
+                stu.update_admin_class()
                 updated += 1
+                current_app.logger.debug("[IMPORT] Row %d -> update student_id=%s", idx, student_id)
             else:
-                db.session.add(Student(
+                new_stu = Student(
                     name=name,
                     gender=gender,
                     student_id=student_id,
@@ -236,15 +405,23 @@ def import_bulk():
                     phone=phone,
                     major=major,
                     clazz=clazz,
-                ))
+                    hometown=hometown or "",
+                )
+                new_stu.update_admin_class()
+                db.session.add(new_stu)
+                pending_new_by_sid[student_id] = new_stu
                 inserted += 1
+                current_app.logger.debug("[IMPORT] Row %d -> insert student_id=%s", idx, student_id)
         except Exception:
             failed += 1
+            current_app.logger.exception("[IMPORT] Row %d processing error", idx)
     try:
         db.session.commit()
+        current_app.logger.info("[IMPORT] Done. inserted=%d, updated=%d, failed=%d", inserted, updated, failed)
     except Exception as e:
         db.session.rollback()
         flash(f"导入提交失败: {e}", "danger")
+        current_app.logger.exception("[IMPORT] Commit failed: %s", e)
         return redirect(url_for("admin.list_students"))
 
     flash(f"导入完成：新增 {inserted} 条，更新 {updated} 条，失败 {failed} 条", "success")
@@ -277,9 +454,17 @@ def edit_student(student_pk: int):
     if not _is_logged_in():
         return redirect(url_for("admin.login"))
     stu = Student.query.get_or_404(student_pk)
-    form = StudentEditForm(obj=stu)
+    # 管理端允许修改学号，使用创建表单以包含 student_id 字段
+    form = StudentCreateForm(obj=stu)
     messages = []
     if form.validate_on_submit():
+        new_sid = form.student_id.data.strip()
+        if new_sid != stu.student_id:
+            exists = Student.query.filter_by(student_id=new_sid).first()
+            if exists:
+                messages.append(("danger", "学号已存在"))
+                return render_template("admin_edit.html", form=form, stu=stu, messages=messages)
+            stu.student_id = new_sid
         stu.name = form.name.data.strip()
         stu.gender = form.gender.data.strip()
         stu.id_card = form.id_card.data.strip()
@@ -296,4 +481,37 @@ def edit_student(student_pk: int):
             messages.append(("danger", "保存失败: %s" % e))
     return render_template("admin_edit.html", form=form, stu=stu, messages=messages)
 
+
+@bp.route("/students/create", methods=["GET", "POST"])
+def create_student():
+    if not _is_logged_in():
+        return redirect(url_for("admin.login"))
+    form = StudentCreateForm()
+    if form.validate_on_submit():
+        # 学号唯一创建
+        exists = Student.query.filter_by(student_id=form.student_id.data.strip()).first()
+        if exists:
+            flash("学号已存在", "danger")
+            return render_template("admin_create.html", form=form)
+        stu = Student(
+            name=form.name.data.strip(),
+            gender=form.gender.data.strip(),
+            student_id=form.student_id.data.strip(),
+            id_card=form.id_card.data.strip(),
+            phone=form.phone.data.strip(),
+            major=form.major.data.strip(),
+            clazz=form.clazz.data.strip(),
+            hometown=form.hometown.data.strip(),
+        )
+        stu.update_admin_class()
+        try:
+            db.session.add(stu)
+            db.session.commit()
+            flash("新增成功", "success")
+            return redirect(url_for("admin.list_students"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"新增失败: {e}", "danger")
+    # 校验失败或首次进入
+    return render_template("admin_create.html", form=form)
 

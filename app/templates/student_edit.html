@@ -21,32 +21,32 @@
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="gender">性别</label>
-                {{ form.gender(class_='FormControl', required=True) }}
+                {{ form.gender(class_='FormControl') }}
             </div>
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="id_card">身份证号码</label>
-                {{ form.id_card(class_='FormControl', required=True, minlength=18, maxlength=18, placeholder='请输入18位身份证号码') }}
+                {{ form.id_card(class_='FormControl', minlength=18, maxlength=18, placeholder='可留空或输入18位身份证号码') }}
             </div>
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="phone">电话号码</label>
-                {{ form.phone(class_='FormControl', required=True, minlength=11, maxlength=11, placeholder='请输入11位手机号') }}
+                {{ form.phone(class_='FormControl', minlength=11, maxlength=11, placeholder='可留空或输入11位手机号') }}
             </div>
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="major">专业</label>
-                {{ form.major(class_='FormControl', required=True) }}
+                {{ form.major(class_='FormControl') }}
             </div>
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="clazz">班级</label>
-                {{ form.clazz(class_='FormControl', required=True, minlength=5, maxlength=5, placeholder='请输入5位班级号') }}
+                {{ form.clazz(class_='FormControl', minlength=5, maxlength=5, placeholder='可留空或输入5位班级号') }}
             </div>
             
             <div class="FormGroup">
                 <label class="FormGroup-label" for="hometown">籍贯</label>
-                {{ form.hometown(class_='FormControl', required=True, maxlength=100, placeholder='如 XX 省 XX 市') }}
+                {{ form.hometown(class_='FormControl', maxlength=100, placeholder='可留空，如 XX 省 XX 市') }}
             </div>
         </div>
         
@@ -60,4 +60,11 @@
 <script>
 // 无JS逻辑（籍贯改为手动输入）
 </script>
+{% if form.id_card.errors %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function(){ alert('{{ form.id_card.errors[0] | trim }}'); }, 0);
+    });
+</script>
+{% endif %}
 {% endblock %}
