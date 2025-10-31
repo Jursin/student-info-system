@@ -187,32 +187,29 @@ def import_bulk():
     ext = os.path.splitext(filename)[1].lower()
     current_app.logger.info("[IMPORT] Start import: filename=%s, ext=%s", filename, ext)
 
-    rows = []
+    # 流式读取，避免占用过多内存
     try:
         headers = []
+        row_iter = None
+        is_excel = False
+        MAX_ROWS = 20000
         if ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]:
             from openpyxl import load_workbook
-            wb = load_workbook(file, data_only=True)
+            wb = load_workbook(file, data_only=True, read_only=True)
             ws = wb.active
-            # 读取表头（第一行，非空）
-            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=False))
-            headers = [ (c.value or "").strip() if isinstance(c.value, str) else ("" if c.value is None else str(c.value).strip()) for c in header_row ]
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+            headers = [ (c or "").strip() if isinstance(c, str) else ("" if c is None else str(c).strip()) for c in header_row ]
             current_app.logger.info("[IMPORT] Detected headers (xlsx): %s", headers)
-            # 读取数据行，保留单元格对象以判断类型
-            for row in ws.iter_rows(min_row=2, values_only=False):
-                rows.append(row)
-            current_app.logger.info("[IMPORT] Loaded %d data rows from Excel", len(rows))
+            row_iter = ws.iter_rows(min_row=2, values_only=True)
+            is_excel = True
         elif ext in [".csv", ".txt"]:
+            import io as _io
             file.stream.seek(0)
-            text = file.stream.read().decode("utf-8-sig")
-            csv_iter = csv.reader(text.splitlines())
-            try:
-                headers = next(csv_iter, [])
-            except StopIteration:
-                headers = []
+            text_stream = _io.TextIOWrapper(file.stream, encoding="utf-8-sig", newline="")
+            reader = csv.reader(text_stream)
+            headers = next(reader, [])
             current_app.logger.info("[IMPORT] Detected headers (csv): %s", headers)
-            rows = list(csv_iter)
-            current_app.logger.info("[IMPORT] Loaded %d data rows from CSV/TXT", len(rows))
+            row_iter = reader
         else:
             flash("不支持的文件格式", "danger")
             current_app.logger.warning("[IMPORT] Unsupported file extension: %s", ext)
@@ -283,20 +280,10 @@ def import_bulk():
                 if any(x not in (None, "") for x in vals):
                     return len(vals), vals
             return 0, []
-        is_excel = ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]
-        length, first_vals = _row_values_len(rows, is_excel)
-        # rows 被消耗了，需重新加载；为简单起见不消耗，改为再次计算
-        if is_excel:
-            # 重新获取长度不消耗 rows：直接用第一行的长度
-            try:
-                length = len(rows[0]) if rows else 0
-                first_vals = [c.value for c in rows[0]] if rows else []
-            except Exception:
-                length = 0
-                first_vals = []
-        else:
-            length = len(rows[0]) if rows else 0
-            first_vals = ["" if x is None else str(x).strip() for x in (rows[0] if rows else [])]
+    is_excel = ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]
+        # 尝试根据前两行数据的列数推断长度（不消耗迭代器，使用 headers 长度作为基准）
+        length = len(headers)
+        first_vals = []
         default_order = ["name", "gender", "student_id", "id_card", "phone", "major", "clazz", "hometown"]
         # 如果第一列像序号，则前置一个空映射跳过
         lead_empty = 1 if (first_vals and str(first_vals[0]).strip().isdigit() and length >= 2) else 0
@@ -305,25 +292,25 @@ def import_bulk():
         current_app.logger.warning("[IMPORT] Using positional header mapping: %s", norm_headers)
 
     inserted, updated, failed = 0, 0, 0
+    processed = 0
     # 记录本次导入过程中新增但尚未提交的 student_id -> Student 对象，避免同一文件中重复学号导致唯一键冲突
     pending_new_by_sid = {}
-    for idx, row in enumerate(rows, start=2):  # 数据从第2行开始
+    BATCH_SIZE = 500
+    for idx, row in enumerate(row_iter, start=2):  # 数据从第2行开始
         try:
             values = {}
-            # Excel: row 是单元格对象列表；CSV: row 是字符串列表
-            if ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]:
-                cells = row
-                # 空行跳过（不计失败）
-                if not any(c.value not in (None, "") for c in cells):
+            # Excel: row 是值列表；CSV: row 是字符串列表
+            if is_excel:
+                cells = list(row)
+                if not any(cells):
                     continue
-                for idx, field in enumerate(norm_headers):
+                for cidx, field in enumerate(norm_headers):
                     if not field or field == "admin_class_ignored":
                         continue
-                    if idx >= len(cells):
+                    if cidx >= len(cells):
                         values[field] = ""
                         continue
-                    cell = cells[idx]
-                    cv = cell.value
+                    cv = cells[cidx]
                     if field in ("student_id", "id_card", "phone", "clazz"):
                         # 强制转字符串并做必要补零
                         if cv is None:
@@ -349,10 +336,10 @@ def import_bulk():
                 cells = ["" if x is None else str(x).strip() for x in row]
                 if not any(cells):
                     continue
-                for idx, field in enumerate(norm_headers):
+                for cidx, field in enumerate(norm_headers):
                     if not field or field == "admin_class_ignored":
                         continue
-                    v = cells[idx] if idx < len(cells) else ""
+                    v = cells[cidx] if cidx < len(cells) else ""
                     if field == "student_id":
                         v = v.zfill(10) if v and v.isdigit() and len(v) < 10 else v
                     elif field == "id_card":
@@ -412,9 +399,18 @@ def import_bulk():
                 pending_new_by_sid[student_id] = new_stu
                 inserted += 1
                 current_app.logger.debug("[IMPORT] Row %d -> insert student_id=%s", idx, student_id)
+            processed += 1
+            if processed % BATCH_SIZE == 0:
+                try:
+                    db.session.flush()
+                except Exception as _e:
+                    current_app.logger.exception("[IMPORT] Flush failed at row %d", idx)
         except Exception:
             failed += 1
             current_app.logger.exception("[IMPORT] Row %d processing error", idx)
+        if processed >= MAX_ROWS:
+            current_app.logger.warning("[IMPORT] Reached MAX_ROWS limit: %d", MAX_ROWS)
+            break
     try:
         db.session.commit()
         current_app.logger.info("[IMPORT] Done. inserted=%d, updated=%d, failed=%d", inserted, updated, failed)
