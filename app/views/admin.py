@@ -270,22 +270,10 @@ def import_bulk():
         norm_headers.append(mapped)
     current_app.logger.info("[IMPORT] Normalized headers: %s", norm_headers)
     if not any(norm_headers):
-        # 尝试位置推断：取首个非空数据行的列数
-        def _row_values_len(rows_it, is_excel: bool):
-            for r in rows_it:
-                if is_excel:
-                    vals = [c.value for c in r]
-                else:
-                    vals = ["" if x is None else str(x).strip() for x in r]
-                if any(x not in (None, "") for x in vals):
-                    return len(vals), vals
-            return 0, []
-    is_excel = ext in [".xlsx", ".xlsm", ".xltx", ".xltm"]
-        # 尝试根据前两行数据的列数推断长度（不消耗迭代器，使用 headers 长度作为基准）
+        # 无法识别表头时，按默认顺序做位置推断；使用 headers 的长度作为基准
         length = len(headers)
         first_vals = []
         default_order = ["name", "gender", "student_id", "id_card", "phone", "major", "clazz", "hometown"]
-        # 如果第一列像序号，则前置一个空映射跳过
         lead_empty = 1 if (first_vals and str(first_vals[0]).strip().isdigit() and length >= 2) else 0
         norm_headers = ([""] * lead_empty) + default_order
         norm_headers = norm_headers[:length]
