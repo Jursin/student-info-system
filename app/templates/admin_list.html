@@ -73,7 +73,9 @@
                         <th>学号</th>
                         <th>姓名</th>
                         <th>性别</th>
+                        <th>民族</th>
                         <th>籍贯</th>
+                        <th>政治面貌</th>
                         <th>身份证号码</th>
                         <th>电话号码</th>
                         <th>专业</th>
@@ -91,7 +93,9 @@
                         <td>{{ s.student_id }}</td>
                         <td>{{ s.name }}</td>
                         <td>{{ s.gender }}</td>
+                        <td>{{ s.ethnicity }}</td>
                         <td>{{ s.hometown }}</td>
+                        <td>{{ s.political_status }}</td>
                         <td>{{ s.id_card }}</td>
                         <td>{{ s.phone }}</td>
                         <td>{{ s.major }}</td>
@@ -152,8 +156,16 @@
                     <label for="gender">性别</label>
                 </div>
                 <div class="checkbox-item">
+                    <input type="checkbox" id="ethnicity" checked>
+                    <label for="ethnicity">民族</label>
+                </div>
+                <div class="checkbox-item">
                     <input type="checkbox" id="hometown" checked>
                     <label for="hometown">籍贯</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="political_status" checked>
+                    <label for="political_status">政治面貌</label>
                 </div>
                 <div class="checkbox-item">
                     <input type="checkbox" id="id_card" checked>

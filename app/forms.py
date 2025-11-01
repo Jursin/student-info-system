@@ -12,7 +12,9 @@ class StudentCreateForm(FlaskForm):
     phone = StringField("电话号码", validators=[Optional(), Regexp(r"^1\d{10}$", message="手机号为1开头11位数字")])
     major = SelectField("专业", choices=[("物理学", "物理学"), ("光电信息科学与工程", "光电信息科学与工程"), ("量子信息科学", "量子信息科学")])
     clazz = StringField("班级", validators=[Optional(), Regexp(r"^\d{5}$", message="班级为5位数字")])
+    ethnicity = StringField("民族", validators=[Optional(), Length(max=50)])
     hometown = StringField("籍贯", validators=[Optional(), Length(max=100)])
+    political_status = StringField("政治面貌", validators=[Optional(), Length(max=50)])
 
     def validate_id_card(self, field):
         if not field.data:
@@ -28,7 +30,9 @@ class StudentEditForm(FlaskForm):
     phone = StringField("电话号码", validators=[Optional(), Regexp(r"^1\d{10}$")])
     major = SelectField("专业", choices=[("物理学", "物理学"), ("光电信息科学与工程", "光电信息科学与工程"), ("量子信息科学", "量子信息科学")])
     clazz = StringField("班级", validators=[Optional(), Regexp(r"^\d{5}$")])
+    ethnicity = StringField("民族", validators=[Optional(), Length(max=50)])
     hometown = StringField("籍贯", validators=[Optional(), Length(max=100)])
+    political_status = StringField("政治面貌", validators=[Optional(), Length(max=50)])
 
     def validate_id_card(self, field):
         if not field.data:

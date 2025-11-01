@@ -99,7 +99,7 @@ def export_excel():
     fmt = (request.args.get("format", "xlsx") or "xlsx").lower()
 
     all_fields = [
-        "student_id", "name", "gender", "hometown", "id_card", "phone", "major", "clazz", "admin_class", "created_at", "updated_at"
+        "student_id", "name", "gender", "ethnicity", "hometown", "political_status", "id_card", "phone", "major", "clazz", "admin_class", "created_at", "updated_at"
     ]
     req_fields = request.args.getlist("fields")
     if not req_fields:
@@ -113,7 +113,9 @@ def export_excel():
         "student_id": "学号",
         "name": "姓名",
         "gender": "性别",
+        "ethnicity": "民族",
         "hometown": "籍贯",
+        "political_status": "政治面貌",
         "id_card": "身份证号码",
         "phone": "电话号码",
         "major": "专业",
@@ -231,7 +233,9 @@ def import_bulk():
         "电话号码": "phone",
         "专业": "major",
         "班级": "clazz",
+        "民族": "ethnicity",
         "籍贯": "hometown",
+        "政治面貌": "political_status",
         "行政班级": "admin_class_ignored",
     }
     # 规范化表头 -> 字段名（去空白、大小写、BOM、常见中英对照）
@@ -256,7 +260,9 @@ def import_bulk():
         "class": "clazz",
         "clazz": "clazz",
         "class_no": "clazz",
+        "ethnicity": "ethnicity",
         "hometown": "hometown",
+        "political_status": "political_status",
         "admin_class": "admin_class_ignored",
         "adminclass": "admin_class_ignored",
     }
@@ -273,7 +279,7 @@ def import_bulk():
         # 无法识别表头时，按默认顺序做位置推断；使用 headers 的长度作为基准
         length = len(headers)
         first_vals = []
-        default_order = ["name", "gender", "student_id", "id_card", "phone", "major", "clazz", "hometown"]
+        default_order = ["name", "gender", "student_id", "id_card", "phone", "major", "clazz", "ethnicity", "hometown", "political_status"]
         lead_empty = 1 if (first_vals and str(first_vals[0]).strip().isdigit() and length >= 2) else 0
         norm_headers = ([""] * lead_empty) + default_order
         norm_headers = norm_headers[:length]
@@ -345,7 +351,9 @@ def import_bulk():
             phone = values.get("phone", "")
             major = values.get("major", "")
             clazz = values.get("clazz", "")
+            ethnicity = values.get("ethnicity", "")
             hometown = values.get("hometown", "")
+            political_status = values.get("political_status", "")
 
             # 仅要求识别标识和基本姓名，其余字段若缺失则留空
             if not all([student_id, name]):
@@ -367,21 +375,25 @@ def import_bulk():
                 stu.phone = phone
                 stu.major = major
                 stu.clazz = clazz
+                stu.ethnicity = ethnicity or ""
                 stu.hometown = hometown or ""
+                stu.political_status = political_status or ""
                 stu.update_admin_class()
                 updated += 1
                 current_app.logger.debug("[IMPORT] Row %d -> update student_id=%s", idx, student_id)
             else:
                 new_stu = Student(
-                    name=name,
-                    gender=gender,
-                    student_id=student_id,
-                    id_card=id_card,
-                    phone=phone,
-                    major=major,
-                    clazz=clazz,
-                    hometown=hometown or "",
-                )
+                name=name,
+                gender=gender,
+                student_id=student_id,
+                id_card=id_card,
+                phone=phone,
+                major=major,
+                clazz=clazz,
+                ethnicity=ethnicity or "",
+                hometown=hometown or "",
+                political_status=political_status or "",
+            )
                 new_stu.update_admin_class()
                 db.session.add(new_stu)
                 pending_new_by_sid[student_id] = new_stu
@@ -455,7 +467,9 @@ def edit_student(student_pk: int):
         stu.phone = form.phone.data.strip()
         stu.major = form.major.data.strip()
         stu.clazz = form.clazz.data.strip()
+        stu.ethnicity = form.ethnicity.data.strip()
         stu.hometown = form.hometown.data.strip()
+        stu.political_status = form.political_status.data.strip()
         stu.update_admin_class()
         try:
             db.session.commit()
@@ -485,7 +499,9 @@ def create_student():
             phone=form.phone.data.strip(),
             major=form.major.data.strip(),
             clazz=form.clazz.data.strip(),
+            ethnicity=form.ethnicity.data.strip(),
             hometown=form.hometown.data.strip(),
+            political_status=form.political_status.data.strip(),
         )
         stu.update_admin_class()
         try:

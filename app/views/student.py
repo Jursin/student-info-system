@@ -72,7 +72,9 @@ def create():
             phone=form.phone.data.strip(),
             major=form.major.data.strip(),
             clazz=form.clazz.data.strip(),
+            ethnicity=form.ethnicity.data.strip() if form.ethnicity.data else None,
             hometown=form.hometown.data.strip(),
+            political_status=form.political_status.data.strip() if form.political_status.data else None,
         )
         student.update_admin_class()
         db.session.add(student)
@@ -106,8 +108,9 @@ def edit():
         stu.phone = form.phone.data.strip()
         stu.major = form.major.data.strip()
         stu.clazz = form.clazz.data.strip()
-        
+        stu.ethnicity = form.ethnicity.data.strip() if form.ethnicity.data else None
         stu.hometown = form.hometown.data.strip()
+        stu.political_status = form.political_status.data.strip() if form.political_status.data else None
         
         stu.update_admin_class()
         try:

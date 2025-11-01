@@ -46,8 +46,18 @@
             </div>
             
             <div class="FormGroup">
+                <label class="FormGroup-label" for="ethnicity">民族</label>
+                {{ form.ethnicity(class_='FormControl', maxlength=50, placeholder='如汉族') }}
+            </div>
+            
+            <div class="FormGroup">
                 <label class="FormGroup-label" for="hometown">籍贯</label>
-                {{ form.hometown(class_='FormControl', maxlength=100, placeholder='可留空，如 XX 省 XX 市') }}
+                {{ form.hometown(class_='FormControl', maxlength=100, placeholder='如 XX 省 XX 市') }}
+            </div>
+            
+            <div class="FormGroup">
+                <label class="FormGroup-label" for="political_status">政治面貌</label>
+                {{ form.political_status(class_='FormControl', maxlength=50, placeholder='如共青团员') }}
             </div>
         </div>
         
