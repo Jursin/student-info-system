@@ -1,4 +1,4 @@
-## 统一学生信息管理系统
+## 学生统一身份信息管理系统
 
 ### 技术栈
 - Python 3.10+
@@ -67,6 +67,9 @@
    - 启动 MySQL 后，登录并执行：
      ```sql
      CREATE DATABASE student_info CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+     CREATE USER 'stu_info'@'localhost' IDENTIFIED BY 'your_password';
+     GRANT ALL PRIVILEGES ON student_info.* TO 'stu_info'@'localhost';
+     FLUSH PRIVILEGES;
      ```
    - 复制 .env，修改数据库连接配置：
      ```bash
