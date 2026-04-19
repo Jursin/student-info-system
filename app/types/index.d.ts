@@ -1,60 +1,47 @@
-import type { AvatarProps } from '@nuxt/ui'
+export type UserRole = 'student' | 'classLeader' | 'admin' | 'superAdmin'
 
-export type UserStatus = 'subscribed' | 'unsubscribed' | 'bounced'
-export type SaleStatus = 'paid' | 'failed' | 'refunded'
-
-export interface User {
-  id: number
+export interface SessionUser {
+  userId: string
   name: string
-  email: string
-  avatar?: AvatarProps
-  status: UserStatus
-  location: string
+  className: string
+  role: UserRole
 }
 
-export interface Mail {
-  id: number
-  unread?: boolean
-  from: User
-  subject: string
-  body: string
-  date: string
-}
-
-export interface Member {
+export interface StudentProfile {
+  userId: string
   name: string
-  username: string
-  role: 'member' | 'owner'
-  avatar: AvatarProps
+  className: string
+  gender: string
+  birthDate: string
+  phone: string
+  address: string
+  guardianPhone: string
+  major: string
+  passwordHash: string
 }
 
-export interface Stat {
-  title: string
-  icon: string
-  value: number | string
-  variation: number
-  formatter?: (value: number) => string
+export interface DynamicField {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'chinese' | 'date' | 'singleChoice'
+  limit?: number
+  options?: string[]
 }
 
-export interface Sale {
+export interface DynamicTable {
   id: string
-  date: string
-  status: SaleStatus
-  email: string
-  amount: number
+  name: string
+  createdBy: string
+  type: 'full' | 'partial'
+  fields: DynamicField[]
 }
 
-export interface Notification {
+export interface OperationLog {
   id: number
-  unread?: boolean
-  sender: User
-  body: string
-  date: string
-}
-
-export type Period = 'daily' | 'weekly' | 'monthly'
-
-export interface Range {
-  start: Date
-  end: Date
+  timestamp: string
+  operatorId: string
+  operatorName: string
+  action: 'create' | 'read' | 'update' | 'delete' | 'login' | 'logout'
+  target: string
+  detail: string
 }

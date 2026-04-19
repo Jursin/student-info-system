@@ -1,0 +1,516 @@
+<script setup lang="ts">
+import { h, resolveComponent } from 'vue'
+import { useToast } from '@nuxt/ui/composables/useToast'
+import type { Row, SortingState } from '@tanstack/table-core'
+import { getPaginationRowModel } from '@tanstack/table-core'
+import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
+import type { DynamicTable } from '~/types'
+import { fromDateValue, toDateValue } from '~/utils/date'
+import { buildSortableHeader } from '~/utils/table'
+
+const UCheckbox = resolveComponent('UCheckbox')
+const UButton = resolveComponent('UButton')
+const UDropdownMenu = resolveComponent('UDropdownMenu')
+
+const toast = useToast()
+const { isAdmin } = useRole()
+const route = useRoute()
+const table = ref<any>(null)
+const pollTimer = ref<number | null>(null)
+
+const addOpen = ref(false)
+const editOpen = ref(false)
+const submitting = ref(false)
+const deletingIds = ref<string[]>([])
+const editingUserId = ref('')
+const formState = ref<Record<string, string>>({})
+
+const tableId = computed(() => route.params.id as string)
+type TableDetailResponse = { table: DynamicTable, rows: Record<string, string>[] }
+
+const defaultTableDetail: TableDetailResponse = {
+  table: {
+    id: '',
+    name: '',
+    createdBy: '',
+    type: 'partial',
+    fields: []
+  },
+  rows: []
+}
+
+const { data, status, refresh } = await useFetch<TableDetailResponse>(
+  () => `/api/tables/${tableId.value}`,
+  {
+    default: () => defaultTableDetail,
+    watch: [tableId]
+  }
+)
+
+const tableData = computed<TableDetailResponse>(() => data.value ?? defaultTableDetail)
+
+const columnFilters = ref([{ id: 'userId', value: '' }])
+const columnVisibility = ref<Record<string, boolean>>({})
+const sorting = ref<SortingState>([])
+const rowSelection = ref({})
+const pagination = ref({ pageIndex: 0, pageSize: 20 })
+const searchKeyword = ref('')
+
+function validateStudentForm(state: Record<string, string>) {
+  const errors: Array<{ name: string, message: string }> = []
+
+  if (!state.userId?.trim()) {
+    errors.push({ name: 'userId', message: '请输入学号' })
+  }
+
+  if (!state.name?.trim()) {
+    errors.push({ name: 'name', message: '请输入姓名' })
+  }
+
+  return errors
+}
+
+const displayColumnItems = computed(() => {
+  const tableApi = table.value?.tableApi
+  if (!tableApi) {
+    return []
+  }
+
+  const labelMap = Object.fromEntries(tableData.value.table.fields
+    .filter(field => field.key !== 'password')
+    .map(field => [field.key, field.label]))
+
+  return tableApi
+    .getAllColumns()
+    .filter((column: any) => column.getCanHide() && !['select', 'actions'].includes(column.id))
+    .map((column: any) => ({
+      label: labelMap[column.id] || column.id,
+      type: 'checkbox',
+      checked: column.getIsVisible(),
+      onUpdateChecked(checked: boolean) {
+        tableApi.getColumn(column.id)?.toggleVisibility(!!checked)
+      },
+      onSelect(e?: Event) {
+        e?.preventDefault()
+      }
+    }))
+})
+
+const searchColumnId = computed(() => {
+  return tableData.value.table.fields[0]?.key || 'userId'
+})
+
+const filteredRows = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  if (!keyword) {
+    return tableData.value.rows
+  }
+
+  return tableData.value.rows.filter(row => Object.values(row).some(value => String(value).toLowerCase().includes(keyword)))
+})
+
+const isBasicInfoTable = computed(() => tableId.value === 'basic-info')
+const tableTypeLabel = computed(() => tableData.value.table.type === 'full' ? '全员表' : '部分表')
+
+function createEmptyFormState() {
+  return Object.fromEntries(tableData.value.table.fields.map(field => [field.key, '']))
+}
+
+function toStudentPayload(row: Record<string, string>) {
+  return {
+    userId: (row.userId || '').trim(),
+    name: (row.name || '').trim(),
+    className: (row.className || '').trim(),
+    gender: row.gender || '',
+    birthDate: row.birthDate || '',
+    phone: row.phone || '',
+    address: row.address || '',
+    guardianPhone: row.guardianPhone || '',
+    major: row.major || ''
+  }
+}
+
+function openAddModal() {
+  formState.value = createEmptyFormState()
+  addOpen.value = true
+}
+
+function openEditModal(row: Record<string, string>) {
+  formState.value = createEmptyFormState()
+  for (const field of tableData.value.table.fields) {
+    formState.value[field.key] = row[field.key] || ''
+  }
+  editingUserId.value = row.userId || ''
+  editOpen.value = true
+}
+
+const formPanelOpen = computed({
+  get: () => addOpen.value || editOpen.value,
+  set: (value: boolean) => {
+    if (!value) {
+      addOpen.value = false
+      editOpen.value = false
+    }
+  }
+})
+
+const isEditingForm = computed(() => editOpen.value)
+const formPanelTitle = computed(() => isEditingForm.value ? '修改信息' : '添加信息')
+const formPanelId = computed(() => isEditingForm.value ? 'edit-row-form' : 'add-row-form')
+const isCoreField = (key: string) => ['userId', 'name'].includes(key)
+const isFieldReadonlyInEdit = (key: string) => isEditingForm.value && !isBasicInfoTable.value && isCoreField(key)
+
+async function submitFormPanel() {
+  if (isEditingForm.value) {
+    await updateRow()
+    return
+  }
+
+  await addRow()
+}
+
+async function addRow() {
+  if (!isAdmin.value) {
+    return
+  }
+
+  submitting.value = true
+  try {
+    await $fetch('/api/students', {
+      method: 'POST',
+      body: {
+        ...toStudentPayload(formState.value),
+        tableId: tableId.value
+      }
+    })
+    toast.add({ title: '添加成功' })
+    addOpen.value = false
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    toast.add({ color: 'error', title: '添加失败', description })
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function updateRow() {
+  if (!isAdmin.value || !editingUserId.value) {
+    return
+  }
+
+  submitting.value = true
+  try {
+    await $fetch(`/api/students/${editingUserId.value}`, {
+      method: 'PUT',
+      body: {
+        ...toStudentPayload(formState.value),
+        tableId: tableId.value
+      }
+    })
+    toast.add({ title: '修改成功' })
+    editOpen.value = false
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    toast.add({ color: 'error', title: '修改失败', description })
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function resetPassword() {
+  if (!isAdmin.value || !editingUserId.value || !isBasicInfoTable.value) {
+    return
+  }
+
+  submitting.value = true
+  try {
+    await $fetch(`/api/students/${editingUserId.value}/password`, {
+      method: 'PUT'
+    })
+    toast.add({ title: '密码已重置为默认值 Stu1234567' })
+    editOpen.value = false
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    toast.add({ color: 'error', title: '重置密码失败', description })
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function deleteRow(userId: string) {
+  if (!isAdmin.value) {
+    return
+  }
+
+  deletingIds.value.push(userId)
+  try {
+    await $fetch(`/api/students/${userId}`, { method: 'DELETE' })
+    toast.add({ title: `已删除 ${userId}` })
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    toast.add({ color: 'error', title: '删除失败', description })
+  } finally {
+    deletingIds.value = deletingIds.value.filter(id => id !== userId)
+  }
+}
+
+async function deleteSelectedRows() {
+  const selectedRows = table.value?.tableApi?.getFilteredSelectedRowModel().rows || []
+  const ids = selectedRows.map((row: any) => row.original.userId).filter(Boolean)
+
+  for (const id of ids) {
+    await deleteRow(id)
+  }
+}
+
+function getRowItems(row: Row<Record<string, string>>) {
+  const items: DropdownMenuItem[] = []
+
+  if (isAdmin.value) {
+    items.push({
+      label: '修改',
+      icon: 'i-lucide-pencil',
+      onSelect: () => openEditModal(row.original)
+    })
+    items.push({
+      label: '删除',
+      icon: 'i-lucide-trash',
+      color: 'error',
+      onSelect: () => deleteRow(row.original.userId || '')
+    })
+  }
+
+  return items
+}
+
+const columns = computed<TableColumn<Record<string, string>>[]>(() => {
+  const fieldColumns = tableData.value.table.fields
+    .filter(field => field.key !== 'password')
+    .map(field => ({
+      accessorKey: field.key,
+      header: ({ column }: { column: any }) => buildSortableHeader(UButton, column, field.label)
+    }))
+
+  return [
+    {
+      id: 'select',
+      header: ({ table }) => h(UCheckbox, {
+        modelValue: table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
+        'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
+        'aria-label': 'Select all',
+        class: 'align-middle'
+      }),
+      cell: ({ row }) => h(UCheckbox, {
+        modelValue: row.getIsSelected(),
+        'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
+        'aria-label': 'Select row',
+        class: 'align-middle'
+      }),
+      enableHiding: false
+    },
+    ...fieldColumns,
+    {
+      id: 'actions',
+      header: '',
+      meta: {
+        class: {
+          th: 'text-right',
+          td: 'text-right'
+        }
+      },
+      enableHiding: false,
+      cell: ({ row }) => h('div', { class: 'text-right' }, h(UDropdownMenu, {
+        items: getRowItems(row),
+        content: { align: 'end' }
+      }, () => h(UButton, {
+        icon: 'i-lucide-ellipsis-vertical',
+        color: 'neutral',
+        variant: 'ghost'
+      })))
+    }
+  ]
+})
+
+function startPolling() {
+  if (pollTimer.value !== null) {
+    return
+  }
+
+  pollTimer.value = window.setInterval(() => {
+    refresh()
+  }, 5000)
+}
+
+function stopPolling() {
+  if (pollTimer.value !== null) {
+    window.clearInterval(pollTimer.value)
+    pollTimer.value = null
+  }
+}
+
+onMounted(() => {
+  startPolling()
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
+</script>
+
+<template>
+  <UDashboardPanel id="table-detail">
+    <template #header>
+      <UDashboardNavbar :title="tableData.table.name || '表详情'">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+
+        <template #right>
+          <NavbarActions />
+        </template>
+      </UDashboardNavbar>
+    </template>
+
+    <template #body>
+      <div class="space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <UInput
+            v-model="searchKeyword"
+            icon="i-lucide-search"
+            placeholder="搜索所有字段"
+            class="max-w-sm"
+          />
+
+          <div class="flex items-center gap-2">
+            <UBadge v-if="!isBasicInfoTable" icon="i-lucide-chart-bar" size="lg" color="primary" variant="subtle">
+              {{ tableTypeLabel }}
+            </UBadge>
+
+            <UButton
+              v-if="isAdmin && (table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0) > 0"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-trash"
+              @click="deleteSelectedRows"
+            >
+              删除
+              <template #trailing>
+                <UKbd>
+                  {{ table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }}
+                </UKbd>
+              </template>
+            </UButton>
+
+            <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
+              <UButton icon="i-lucide-settings-2" label="展示" color="neutral" variant="outline" />
+            </UDropdownMenu>
+
+            <UButton v-if="isAdmin" icon="i-lucide-list-plus" color="primary" @click="openAddModal">
+              添加信息
+            </UButton>
+          </div>
+        </div>
+
+        <UTable
+          ref="table"
+          v-model:column-filters="columnFilters"
+          v-model:column-visibility="columnVisibility"
+          v-model:sorting="sorting"
+          v-model:row-selection="rowSelection"
+          v-model:pagination="pagination"
+          :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }"
+          :loading="status === 'pending'"
+          :data="filteredRows"
+          :columns="columns"
+          sticky
+          class="w-full"
+        />
+
+        <div class="flex items-center justify-between gap-3 border-t border-default pt-4">
+          <div class="text-sm text-muted">
+            {{ table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }} / {{ table?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
+          </div>
+          <UPagination
+            :default-page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+            :items-per-page="table?.tableApi?.getState().pagination.pageSize"
+            :total="table?.tableApi?.getFilteredRowModel().rows.length"
+            @update:page="p => table?.tableApi?.setPageIndex(p - 1)"
+          />
+        </div>
+
+        <UModal v-model:open="formPanelOpen" :title="formPanelTitle" :ui="{ content: 'max-w-3xl' }">
+          <template #body>
+            <UForm
+              :id="formPanelId"
+              :state="formState"
+              :validate="validateStudentForm"
+              :validate-on="['input', 'blur', 'change']"
+              class="grid grid-cols-1 lg:grid-cols-3 gap-4"
+              @submit="submitFormPanel"
+            >
+              <UFormField
+                v-for="field in tableData.table.fields.filter(f => f.key !== 'password')"
+                :key="field.key"
+                :name="field.key"
+                :label="field.label"
+                :required="isCoreField(field.key)"
+              >
+                <USelect
+                  v-if="field.type === 'singleChoice'"
+                  v-model="formState[field.key]"
+                  :items="(field.options || []).map(option => ({ label: option, value: option }))"
+                  :disabled="isFieldReadonlyInEdit(field.key)"
+                  class="w-full"
+                />
+                <UInputDate
+                  v-else-if="field.type === 'date'"
+                  class="w-full"
+                  icon="i-lucide-calendar"
+                  :model-value="toDateValue(formState[field.key])"
+                  :disabled="isFieldReadonlyInEdit(field.key)"
+                  @update:model-value="value => formState[field.key] = fromDateValue(value as { year: number, month: number, day: number } | null)"
+                />
+                <UInput
+                  v-else
+                  v-model="formState[field.key]"
+                  :type="field.type === 'number' ? 'number' : 'text'"
+                  :disabled="isFieldReadonlyInEdit(field.key)"
+                  class="w-full"
+                />
+              </UFormField>
+            </UForm>
+          </template>
+
+          <template #footer>
+            <div class="flex justify-between w-full">
+              <div>
+                <UButton
+                  v-if="isAdmin && isEditingForm && isBasicInfoTable"
+                  color="primary"
+                  variant="subtle"
+                  :loading="submitting"
+                  @click="resetPassword"
+                >
+                  重置密码
+                </UButton>
+              </div>
+              <div class="flex justify-end gap-2">
+                <UButton color="neutral" variant="ghost" @click="formPanelOpen = false">
+                  取消
+                </UButton>
+                <UButton type="submit" :form="formPanelId" :loading="submitting">
+                  保存修改
+                </UButton>
+              </div>
+            </div>
+          </template>
+        </UModal>
+
+      </div>
+    </template>
+  </UDashboardPanel>
+</template>

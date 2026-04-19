@@ -1,69 +1,533 @@
 <script setup lang="ts">
-import { sub } from 'date-fns'
-import type { DropdownMenuItem } from '@nuxt/ui'
-import type { Period, Range } from '~/types'
+import { parseDate } from '@internationalized/date'
+import type { DynamicTable, OperationLog, StudentProfile } from '~/types'
 
-const { isNotificationsSlideoverOpen } = useDashboard()
+const { isAdmin } = useRole()
 
-const items = [[{
-  label: 'New mail',
-  icon: 'i-lucide-send',
-  to: '/inbox'
-}, {
-  label: 'New customer',
-  icon: 'i-lucide-user-plus',
-  to: '/customers'
-}]] satisfies DropdownMenuItem[][]
+type TrendKey = 'login' | 'create' | 'delete' | 'update'
+type TrendRange = '24h' | '7d' | '1m' | '6m' | 'custom'
 
-const range = shallowRef<Range>({
-  start: sub(new Date(), { days: 14 }),
-  end: new Date()
+const { data } = await useFetch<StudentProfile[]>('/api/students', {
+  default: () => []
 })
-const period = ref<Period>('daily')
+
+const { data: tables } = await useFetch<DynamicTable[]>('/api/admin/tables', {
+  default: () => [],
+  immediate: isAdmin.value
+})
+
+const { data: logs } = await useFetch<OperationLog[]>('/api/admin/logs', {
+  default: () => [],
+  immediate: isAdmin.value
+})
+
+const { data: roleStats } = await useFetch<{ count: number }>('/api/metrics/roles-count', {
+  default: () => ({ count: 0 })
+})
+
+const classCount = computed(() => new Set(data.value.map(item => item.className)).size)
+const roleCount = computed(() => roleStats.value.count)
+const tableCount = computed(() => isAdmin.value ? tables.value.length : 0)
+
+const trendRange = ref<TrendRange>('7d')
+const customRangeOpen = ref(false)
+const trendCustomStart = ref<any>(null)
+const trendCustomEnd = ref<any>(null)
+const trendAllKeys: TrendKey[] = ['login', 'create', 'delete', 'update']
+const selectedTrendKeys = ref<TrendKey[]>([...trendAllKeys])
+
+const trendRangeOptions = [
+  { label: '最近24小时', value: '24h' as const },
+  { label: '最近7天', value: '7d' as const },
+  { label: '最近1个月', value: '1m' as const },
+  { label: '最近半年', value: '6m' as const },
+  { label: '自定义', value: 'custom' as const }
+]
+
+const trendLegendItems: Array<{ key: TrendKey, label: string }> = [
+  { key: 'login', label: '登录' },
+  { key: 'create', label: '添加' },
+  { key: 'delete', label: '删除' },
+  { key: 'update', label: '修改' }
+]
+
+const trendFilterBaseItems = [
+  {
+    label: '全部',
+    icon: 'i-lucide-list-checks',
+    onSelect: () => selectAllTrends()
+  },
+  {
+    type: 'separator' as const
+  }
+]
+
+const trendCategories = {
+  login: {
+    name: '登录',
+    color: 'color-mix(in oklab, var(--ui-primary) 55%, white)'
+  },
+  create: {
+    name: '添加',
+    color: 'color-mix(in oklab, var(--ui-primary) 75%, white)'
+  },
+  delete: {
+    name: '删除',
+    color: 'var(--ui-primary)'
+  },
+  update: {
+    name: '修改',
+    color: 'color-mix(in oklab, var(--ui-primary) 80%, black)'
+  }
+}
+
+const visibleTrendCategories = computed(() => {
+  const picked = new Set(selectedTrendKeys.value)
+  const result: Partial<typeof trendCategories> = {}
+
+  for (const key of trendAllKeys) {
+    if (picked.has(key)) {
+      result[key] = trendCategories[key]
+    }
+  }
+
+  // 至少保留一条曲线，避免图表空数据造成交互困惑。
+  if (!Object.keys(result).length) {
+    result.login = trendCategories.login
+  }
+
+  return result
+})
+
+const selectedTrendLabel = computed(() => {
+  if (selectedTrendKeys.value.length === trendAllKeys.length) {
+    return '全部分类'
+  }
+
+  if (selectedTrendKeys.value.length === 1) {
+    const key = selectedTrendKeys.value[0]
+    return trendLegendItems.find(item => item.key === key)?.label || '分类筛选'
+  }
+
+  return `已选${selectedTrendKeys.value.length}项`
+})
+
+function isTrendSelected(key: TrendKey): boolean {
+  return selectedTrendKeys.value.includes(key)
+}
+
+function selectAllTrends() {
+  selectedTrendKeys.value = [...trendAllKeys]
+}
+
+function toggleTrendSelection(key: TrendKey, checked: boolean) {
+  if (checked) {
+    if (!selectedTrendKeys.value.includes(key)) {
+      selectedTrendKeys.value = [...selectedTrendKeys.value, key]
+    }
+    return
+  }
+
+  const next = selectedTrendKeys.value.filter(item => item !== key)
+  if (!next.length) {
+    return
+  }
+
+  selectedTrendKeys.value = next
+}
+
+const trendFilterItems = computed(() => [...trendFilterBaseItems, ...trendLegendItems.map(item => ({
+  label: item.label,
+  type: 'checkbox' as const,
+  checked: isTrendSelected(item.key),
+  onUpdateChecked(checked: boolean) {
+    toggleTrendSelection(item.key, checked)
+  },
+  onSelect(e?: Event) {
+    e?.preventDefault()
+  }
+}))])
+
+function toDateText(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function setDefaultCustomRange() {
+  const today = new Date()
+  const lastYearToday = new Date(today)
+  lastYearToday.setFullYear(today.getFullYear() - 1)
+
+  trendCustomStart.value = parseDate(toDateText(lastYearToday))
+  trendCustomEnd.value = parseDate(toDateText(today))
+}
+
+watch(trendRange, (value) => {
+  if (value === 'custom') {
+    setDefaultCustomRange()
+    customRangeOpen.value = true
+  }
+})
+
+function calendarDateToDate(value: { year?: number, month?: number, day?: number } | null, endOfDay = false): Date | null {
+  if (!value || !value.year || !value.month || !value.day) {
+    return null
+  }
+
+  return new Date(
+    value.year,
+    value.month - 1,
+    value.day,
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0
+  )
+}
+
+function formatBucketLabel(date: Date, unit: 'hour' | 'day' | 'month'): string {
+  if (unit === 'hour') {
+    return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:00`
+  }
+
+  if (unit === 'month') {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`
+}
+
+function getRangeConfig(): { start: Date, end: Date, unit: 'hour' | 'day' | 'month' } {
+  const now = new Date()
+
+  if (trendRange.value === '24h') {
+    return { start: new Date(now.getTime() - 24 * 60 * 60 * 1000), end: now, unit: 'hour' as const }
+  }
+
+  if (trendRange.value === '7d') {
+    return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now, unit: 'day' as const }
+  }
+
+  if (trendRange.value === '1m') {
+    return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now, unit: 'day' as const }
+  }
+
+  if (trendRange.value === '6m') {
+    const start = new Date(now)
+    start.setMonth(start.getMonth() - 6)
+    return { start, end: now, unit: 'month' as const }
+  }
+
+  const customStart = calendarDateToDate(trendCustomStart.value)
+  const customEnd = calendarDateToDate(trendCustomEnd.value, true)
+  const end = customEnd || now
+  const start = customStart && customStart.getTime() < end.getTime()
+    ? customStart
+    : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+  const diffMs = end.getTime() - start.getTime()
+  const unit: 'hour' | 'day' | 'month' = diffMs <= 2 * 24 * 60 * 60 * 1000
+    ? 'hour'
+    : (diffMs <= 62 * 24 * 60 * 60 * 1000 ? 'day' : 'month')
+
+  return { start, end, unit }
+}
+
+function createBuckets(start: Date, end: Date, unit: 'hour' | 'day' | 'month') {
+  const buckets: Array<{ start: Date, end: Date, label: string }> = []
+  const cursor = new Date(start)
+
+  if (unit === 'hour') {
+    cursor.setMinutes(0, 0, 0)
+  }
+
+  if (unit === 'day') {
+    cursor.setHours(0, 0, 0, 0)
+  }
+
+  if (unit === 'month') {
+    cursor.setDate(1)
+    cursor.setHours(0, 0, 0, 0)
+  }
+
+  while (cursor.getTime() <= end.getTime()) {
+    const bucketStart = new Date(cursor)
+    const bucketEnd = new Date(cursor)
+
+    if (unit === 'hour') {
+      bucketEnd.setHours(bucketEnd.getHours() + 1)
+    } else if (unit === 'day') {
+      bucketEnd.setDate(bucketEnd.getDate() + 1)
+    } else {
+      bucketEnd.setMonth(bucketEnd.getMonth() + 1)
+    }
+
+    buckets.push({
+      start: bucketStart,
+      end: bucketEnd,
+      label: formatBucketLabel(bucketStart, unit)
+    })
+
+    cursor.setTime(bucketEnd.getTime())
+  }
+
+  return buckets
+}
+
+const trendSeries = computed(() => {
+  const { start, end, unit } = getRangeConfig()
+  const buckets = createBuckets(start, end, unit)
+  const series = buckets.map(bucket => ({
+    label: bucket.label,
+    login: 0,
+    create: 0,
+    delete: 0,
+    update: 0
+  }))
+
+  for (const log of logs.value) {
+    const date = new Date(log.timestamp)
+    if (date.getTime() < start.getTime() || date.getTime() > end.getTime()) {
+      continue
+    }
+
+    const index = buckets.findIndex(bucket => date.getTime() >= bucket.start.getTime() && date.getTime() < bucket.end.getTime())
+    if (index < 0) {
+      continue
+    }
+
+    const current = series[index]
+    if (!current) {
+      continue
+    }
+
+    if (log.action === 'login' || log.action === 'create' || log.action === 'delete' || log.action === 'update') {
+      current[log.action] += 1
+    }
+  }
+
+  return series
+})
+
+const trendChartData = computed(() => trendSeries.value.map(item => ({
+  date: item.label,
+  login: item.login,
+  create: item.create,
+  delete: item.delete,
+  update: item.update
+})))
+
+const recentLogs = computed(() => {
+  if (!isAdmin.value) {
+    return []
+  }
+
+  return logs.value.slice(0, 8).map(item => ({
+    timestamp: new Date(item.timestamp).toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }),
+    operatorName: item.operatorName,
+    action: item.action,
+    target: item.target,
+    detail: item.detail
+  }))
+})
+
+const trendTooltipStyle = {
+  '--vis-tooltip-background-color': 'var(--ui-bg)',
+  '--vis-tooltip-border-color': 'var(--ui-border)',
+  '--vis-tooltip-text-color': 'var(--ui-text-highlighted)',
+  '--vis-tooltip-title-color': 'var(--ui-text-highlighted)',
+  '--vis-tooltip-label-color': 'var(--ui-text-toned)',
+  '--vis-tooltip-value-color': 'var(--ui-text-highlighted)',
+  '--vis-tooltip-box-shadow': '0 8px 20px color-mix(in oklab, var(--ui-border) 40%, transparent)'
+}
+
+function trendXFormatter(index: number): string {
+  return trendChartData.value[index]?.date || ''
+}
+
+function applyCustomRange() {
+  customRangeOpen.value = false
+}
+
 </script>
 
 <template>
-  <UDashboardPanel id="home">
+  <UDashboardPanel id="dashboard">
     <template #header>
-      <UDashboardNavbar title="Home" :ui="{ right: 'gap-3' }">
+      <UDashboardNavbar title="仪表盘">
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
 
         <template #right>
-          <UTooltip text="Notifications" :shortcuts="['N']">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              square
-              @click="isNotificationsSlideoverOpen = true"
-            >
-              <UChip color="error" inset>
-                <UIcon name="i-lucide-bell" class="size-5 shrink-0" />
-              </UChip>
-            </UButton>
-          </UTooltip>
-
-          <UDropdownMenu :items="items">
-            <UButton icon="i-lucide-plus" size="md" class="rounded-full" />
-          </UDropdownMenu>
+          <NavbarActions />
         </template>
       </UDashboardNavbar>
-
-      <UDashboardToolbar>
-        <template #left>
-          <!-- NOTE: The `-ms-1` class is used to align with the `DashboardSidebarCollapse` button here. -->
-          <HomeDateRangePicker v-model="range" class="-ms-1" />
-
-          <HomePeriodSelect v-model="period" :range="range" />
-        </template>
-      </UDashboardToolbar>
     </template>
 
     <template #body>
-      <HomeStats :period="period" :range="range" />
-      <HomeChart :period="period" :range="range" />
-      <HomeSales :period="period" :range="range" />
+      <div class="space-y-6">
+        <UPageGrid class="lg:grid-cols-4 gap-4 sm:gap-6">
+          <UPageCard
+            title="角色数量"
+            icon="i-lucide-shield-user"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ roleCount }}
+            </p>
+          </UPageCard>
+
+          <UPageCard
+            title="信息表数量"
+            icon="i-lucide-table-properties"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ tableCount }}
+            </p>
+          </UPageCard>
+
+          <UPageCard
+            title="学生总人数"
+            icon="i-lucide-users"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ data.length }}
+            </p>
+          </UPageCard>
+
+          <UPageCard
+            title="班级数量"
+            icon="i-lucide-book-user"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ classCount }}
+            </p>
+          </UPageCard>
+        </UPageGrid>
+
+        <UCard>
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <h2 class="text-lg font-semibold text-highlighted">
+                  事件趋势
+                </h2>
+                <USelect
+                  v-model="trendRange"
+                  :items="trendRangeOptions"
+                  class="w-36"
+                />
+              </div>
+
+              <div class="flex items-center gap-2">
+                <UDropdownMenu :items="trendFilterItems" :content="{ align: 'end' }">
+                  <UButton
+                    class="w-32 justify-between"
+                    color="neutral"
+                    variant="outline"
+                    trailing-icon="i-lucide-chevron-down"
+                    @click.stop
+                  >
+                    {{ selectedTrendLabel }}
+                  </UButton>
+                </UDropdownMenu>
+              </div>
+            </div>
+          </template>
+
+          <div v-if="!isAdmin" class="text-sm text-muted">
+            当前角色无权查看全局事件趋势。
+          </div>
+
+          <div v-else class="space-y-2">
+
+            <LineChart
+              :style="trendTooltipStyle"
+              :data="trendChartData"
+              :categories="visibleTrendCategories"
+              :height="320"
+              x-label="日期"
+              y-label="次数"
+              :x-formatter="trendXFormatter"
+              :curve-type="'step' as any"
+              :line-width="3"
+              :x-grid-line="false"
+              :y-grid-line="true"
+              :x-tick-line="false"
+              :y-tick-line="false"
+              :legend-position="'top-right' as any"
+            />
+          </div>
+
+          <UModal v-model:open="customRangeOpen" title="自定义日期范围" :ui="{ content: 'max-w-xl' }">
+            <template #body>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <UFormField label="开始日期">
+                  <UInputDate
+                    v-model="trendCustomStart"
+                    locale="zh-CN"
+                    icon="i-lucide-calendar-days"
+                    class="w-full"
+                  />
+                </UFormField>
+
+                <UFormField label="结束日期">
+                  <UInputDate
+                    v-model="trendCustomEnd"
+                    locale="zh-CN"
+                    icon="i-lucide-calendar-days"
+                    class="w-full"
+                  />
+                </UFormField>
+              </div>
+            </template>
+
+            <template #footer>
+              <div class="flex justify-end gap-2 w-full">
+                <UButton color="neutral" variant="ghost" @click="customRangeOpen = false">
+                  取消
+                </UButton>
+                <UButton @click="applyCustomRange">
+                  应用
+                </UButton>
+              </div>
+            </template>
+          </UModal>
+        </UCard>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

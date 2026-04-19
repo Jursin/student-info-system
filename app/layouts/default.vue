@@ -1,116 +1,63 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
-
-const route = useRoute()
-const toast = useToast()
+import type { DynamicTable } from '~/types'
 
 const open = ref(false)
+const { isAdmin, isSuperAdmin } = useRole()
+const { data: tables } = await useFetch<DynamicTable[]>('/api/tables', {
+  default: () => []
+})
 
-const links = [[{
-  label: 'Home',
-  icon: 'i-lucide-house',
-  to: '/',
-  onSelect: () => {
-    open.value = false
-  }
-}, {
-  label: 'Inbox',
-  icon: 'i-lucide-inbox',
-  to: '/inbox',
-  badge: '4',
-  onSelect: () => {
-    open.value = false
-  }
-}, {
-  label: 'Customers',
-  icon: 'i-lucide-users',
-  to: '/customers',
-  onSelect: () => {
-    open.value = false
-  }
-}, {
-  label: 'Settings',
-  to: '/settings',
-  icon: 'i-lucide-settings',
-  defaultOpen: true,
-  type: 'trigger',
-  children: [{
-    label: 'General',
-    to: '/settings',
-    exact: true,
-    onSelect: () => {
-      open.value = false
-    }
-  }, {
-    label: 'Members',
-    to: '/settings/members',
-    onSelect: () => {
-      open.value = false
-    }
-  }, {
-    label: 'Notifications',
-    to: '/settings/notifications',
-    onSelect: () => {
-      open.value = false
-    }
-  }, {
-    label: 'Security',
-    to: '/settings/security',
+const links = computed<NavigationMenuItem[][]>(() => {
+  const primary: NavigationMenuItem[] = [{
+    label: '仪表盘',
+    icon: 'i-lucide-layout-dashboard',
+    to: '/',
     onSelect: () => {
       open.value = false
     }
   }]
-}], [{
-  label: 'Feedback',
-  icon: 'i-lucide-message-circle',
-  to: 'https://github.com/nuxt-ui-templates/dashboard',
-  target: '_blank'
-}, {
-  label: 'Help & Support',
-  icon: 'i-lucide-info',
-  to: 'https://github.com/nuxt-ui-templates/dashboard',
-  target: '_blank'
-}]] satisfies NavigationMenuItem[][]
 
-const groups = computed(() => [{
-  id: 'links',
-  label: 'Go to',
-  items: links.flat()
-}, {
-  id: 'code',
-  label: 'Code',
-  items: [{
-    id: 'source',
-    label: 'View page source',
-    icon: 'i-simple-icons-github',
-    to: `https://github.com/nuxt-ui-templates/dashboard/blob/main/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
-    target: '_blank'
-  }]
-}])
-
-onMounted(async () => {
-  const cookie = useCookie('cookie-consent')
-  if (cookie.value === 'accepted') {
-    return
-  }
-
-  toast.add({
-    title: 'We use first-party cookies to enhance your experience on our website.',
-    duration: 0,
-    close: false,
-    actions: [{
-      label: 'Accept',
-      color: 'neutral',
-      variant: 'outline',
-      onClick: () => {
-        cookie.value = 'accepted'
+  if (isSuperAdmin.value) {
+    primary.splice(1, 0, {
+      label: '角色管理',
+      icon: 'i-lucide-shield-user',
+      to: '/admin/roles',
+      onSelect: () => {
+        open.value = false
       }
-    }, {
-      label: 'Opt out',
-      color: 'neutral',
-      variant: 'ghost'
-    }]
+    })
+  }
+
+  primary.push({
+    label: '信息表',
+    icon: 'i-lucide-table-properties',
+    to: '/tables',
+    defaultOpen: true,
+    onSelect: () => {
+      open.value = false
+    },
+    children: tables.value.map(table => ({
+      label: table.name,
+      to: `/tables/${table.id}`,
+      onSelect: () => {
+        open.value = false
+      }
+    }))
   })
+
+  if (isAdmin.value) {
+    primary.push({
+      label: '操作日志',
+      icon: 'i-lucide-file-clock',
+      to: '/admin/logs',
+      onSelect: () => {
+        open.value = false
+      }
+    })
+  }
+
+  return [primary]
 })
 </script>
 
@@ -125,12 +72,15 @@ onMounted(async () => {
       :ui="{ footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
-        <TeamsMenu :collapsed="collapsed" />
+        <div class="px-2 py-1 flex items-center" :class="collapsed ? 'justify-center' : 'gap-2'">
+          <UIcon name="i-lucide-graduation-cap" class="size-5 text-highlighted shrink-0" />
+          <p v-if="!collapsed" class="text-base font-semibold text-highlighted truncate">
+            学生信息管理系统
+          </p>
+        </div>
       </template>
 
       <template #default="{ collapsed }">
-        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
-
         <UNavigationMenu
           :collapsed="collapsed"
           :items="links[0]"
@@ -138,25 +88,8 @@ onMounted(async () => {
           tooltip
           popover
         />
-
-        <UNavigationMenu
-          :collapsed="collapsed"
-          :items="links[1]"
-          orientation="vertical"
-          tooltip
-          class="mt-auto"
-        />
-      </template>
-
-      <template #footer="{ collapsed }">
-        <UserMenu :collapsed="collapsed" />
       </template>
     </UDashboardSidebar>
-
-    <UDashboardSearch :groups="groups" />
-
     <slot />
-
-    <NotificationsSlideover />
   </UDashboardGroup>
 </template>

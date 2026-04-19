@@ -1,0 +1,41 @@
+import { isSuperAdmin } from '../../../../../utils/access'
+import { appendUserLog, requireSessionUser } from '../../../../../utils/auth'
+import { hashPassword } from '../../../../../utils/security'
+import { findUserByUserId, updateUserAuthState } from '../../../../../utils/store'
+
+const ADMIN_DEFAULT_PASSWORD = 'Admin12345'
+const CLASS_LEADER_DEFAULT_PASSWORD = 'Stu1234567'
+
+export default eventHandler(async (event) => {
+  const user = await requireSessionUser(event)
+  if (!isSuperAdmin(user)) {
+    throw createError({ statusCode: 403, statusMessage: '无权限管理角色' })
+  }
+
+  const userId = getRouterParam(event, 'studentId')
+  if (!userId) {
+    throw createError({ statusCode: 400, statusMessage: '缺少用户名/学号参数' })
+  }
+
+  const current = await findUserByUserId(userId)
+  if (!current) {
+    throw createError({ statusCode: 404, statusMessage: '用户不存在' })
+  }
+
+  if (current.role === 'superAdmin') {
+    throw createError({ statusCode: 400, statusMessage: '不支持重置超级管理员密码' })
+  }
+
+  const defaultPassword = current.role === 'admin'
+    ? ADMIN_DEFAULT_PASSWORD
+    : CLASS_LEADER_DEFAULT_PASSWORD
+
+  await updateUserAuthState({
+    userId,
+    passwordHash: hashPassword(defaultPassword)
+  })
+
+  await appendUserLog(user, 'update', 'roles', `重置角色用户 ${userId} 的密码为默认值`)
+
+  return { success: true, defaultPassword }
+})
