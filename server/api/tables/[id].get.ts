@@ -6,14 +6,14 @@ export default eventHandler(async (event) => {
   const tableId = getRouterParam(event, 'id')
 
   if (!tableId) {
-    throw createError({ statusCode: 400, statusMessage: '缺少表标识' })
+    throw createError({ statusCode: 400, message: '缺少表标识' })
   }
 
   const tables = await listDynamicTables()
   const table = tables.find(item => item.id === tableId)
 
   if (!table) {
-    throw createError({ statusCode: 404, statusMessage: '表不存在' })
+    throw createError({ statusCode: 404, message: '表不存在' })
   }
 
   let profiles = await listStudentProfiles()

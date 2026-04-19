@@ -7,16 +7,16 @@ export default eventHandler(async (event) => {
   const userId = getRouterParam(event, 'studentId')
 
   if (!userId) {
-    throw createError({ statusCode: 400, statusMessage: '缺少用户名/学号参数' })
+    throw createError({ statusCode: 400, message: '缺少用户名/学号参数' })
   }
 
   if (!canManageAllStudents(user)) {
-    throw createError({ statusCode: 403, statusMessage: '只有管理员可删除学生' })
+    throw createError({ statusCode: 403, message: '只有管理员可删除学生' })
   }
 
   const removed = await deleteStudentProfile(userId)
   if (!removed) {
-    throw createError({ statusCode: 404, statusMessage: '学生不存在' })
+    throw createError({ statusCode: 404, message: '学生不存在' })
   }
 
   await appendUserLog(user, 'delete', 'students', `删除学生 ${userId}`)

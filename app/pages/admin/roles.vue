@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
 import { getPaginationRowModel } from '@tanstack/table-core'
 import type { SortingState } from '@tanstack/table-core'
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
@@ -23,9 +22,19 @@ const UButton = resolveComponent('UButton')
 const UDropdownMenu = resolveComponent('UDropdownMenu')
 const UBadge = resolveComponent('UBadge')
 
+type RolesTableRef = {
+  tableApi?: {
+    getColumn: (id: string) => { setFilterValue: (value: string | undefined) => void } | undefined
+    getFilteredSelectedRowModel: () => { rows: unknown[] }
+    getFilteredRowModel: () => { rows: unknown[] }
+    getState: () => { pagination: { pageIndex: number, pageSize: number } }
+    setPageIndex: (pageIndex: number) => void
+  }
+}
+
 const toast = useToast()
 const { isSuperAdmin } = useRole()
-const tableRef = ref<any>(null)
+const tableRef = ref<RolesTableRef | null>(null)
 const createOpen = ref(false)
 const editOpen = ref(false)
 const creating = ref(false)
@@ -56,7 +65,7 @@ const { data: users, status, refresh } = await useFetch<RoleUser[]>('/api/admin/
 
 const roleLabelMap: Record<UserRole, string> = {
   student: '学生',
-  classLeader: '学委',
+  classLeader: '班委',
   admin: '管理员',
   superAdmin: '超级管理员'
 }
@@ -70,7 +79,7 @@ const roleColorMap: Record<UserRole, 'neutral' | 'primary' | 'success' | 'warnin
 
 const roleItems = [
   { label: '管理员', value: 'admin' },
-  { label: '学委', value: 'classLeader' }
+  { label: '班委', value: 'classLeader' }
 ]
 
 const columnVisibility = ref<Record<string, boolean>>({})
@@ -81,7 +90,7 @@ const usersData = computed(() => {
     return users.value
   }
 
-  return users.value.filter(item => {
+  return users.value.filter((item) => {
     const role = roleLabelMap[item.role]
     return [item.userId, item.name, item.className, role]
       .some(text => String(text || '').toLowerCase().includes(q))
@@ -92,16 +101,16 @@ const columns: TableColumn<RoleUser>[] = [
   {
     id: 'select',
     header: ({ table }) => h(UCheckbox, {
-      modelValue: table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
+      'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
       'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
       'aria-label': 'Select all',
-      class: 'align-middle'
+      'class': 'align-middle'
     }),
     cell: ({ row }) => h(UCheckbox, {
-      modelValue: row.getIsSelected(),
+      'modelValue': row.getIsSelected(),
       'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
       'aria-label': 'Select row',
-      class: 'align-middle'
+      'class': 'align-middle'
     }),
     enableHiding: false
   },
@@ -161,9 +170,14 @@ const columns: TableColumn<RoleUser>[] = [
 
 const userIdLabel = computed(() => formState.role === 'admin' ? '用户名' : '学号')
 const isAdminType = computed(() => formState.role === 'admin')
+const isCreatingClassLeader = computed(() => !editingId.value && formState.role === 'classLeader')
+const classLeaderLookupLoading = ref(false)
+const classLeaderLookupMessage = ref('')
+let classLeaderLookupTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(keyword, (value) => {
-  tableRef.value?.tableApi?.getColumn('userId')?.setFilterValue(value || undefined)
+  const column = tableRef.value?.tableApi?.getColumn('userId')
+  column?.setFilterValue(value || undefined)
 })
 
 function getRowItems(row: RoleUser): DropdownMenuItem[] {
@@ -195,6 +209,44 @@ function resetForm() {
   formState.password = ''
   editingId.value = ''
   editingRole.value = null
+  classLeaderLookupMessage.value = ''
+}
+
+async function fillClassLeaderProfileByUserId() {
+  if (!isCreatingClassLeader.value) {
+    return
+  }
+
+  const userId = formState.userId.trim()
+  if (!userId) {
+    formState.name = ''
+    formState.className = ''
+    classLeaderLookupMessage.value = ''
+    return
+  }
+
+  classLeaderLookupLoading.value = true
+  try {
+    const students = await $fetch<Array<{ userId: string, name: string, className: string }>>('/api/students')
+    const matched = students.find(item => item.userId === userId)
+
+    if (!matched) {
+      formState.name = ''
+      formState.className = ''
+      classLeaderLookupMessage.value = '未找到该学号的基本信息'
+      return
+    }
+
+    formState.name = matched.name
+    formState.className = matched.className
+    classLeaderLookupMessage.value = '已从基本信息表自动填充姓名与班级'
+  } catch {
+    formState.name = ''
+    formState.className = ''
+    classLeaderLookupMessage.value = '读取基本信息失败，请稍后重试'
+  } finally {
+    classLeaderLookupLoading.value = false
+  }
 }
 
 function validateForm(state: typeof formState) {
@@ -212,11 +264,11 @@ function validateForm(state: typeof formState) {
     errors.push({ name: 'userId', message: `请输入${userIdLabel.value}` })
   }
 
-  if (!state.name.trim()) {
+  if (!isCreatingClassLeader.value && !state.name.trim()) {
     errors.push({ name: 'name', message: '请输入姓名' })
   }
 
-  if (!isAdminType.value && !state.className.trim()) {
+  if (!isCreatingClassLeader.value && !isAdminType.value && !state.className.trim()) {
     errors.push({ name: 'className', message: '请输入班级' })
   }
 
@@ -224,7 +276,7 @@ function validateForm(state: typeof formState) {
     errors.push({ name: 'password', message: '密码至少10位，且包含大小写字母和数字' })
   }
 
-  if (!editingId.value && !state.password.trim()) {
+  if (!editingId.value && isAdminType.value && !state.password.trim()) {
     errors.push({ name: 'password', message: '请输入密码' })
   }
 
@@ -250,15 +302,26 @@ function openEdit(row: RoleUser) {
 async function createUser() {
   creating.value = true
   try {
+    const body: {
+      userId: string
+      role: 'admin' | 'classLeader'
+      password?: string
+      name?: string
+      className?: string
+    } = {
+      userId: formState.userId,
+      role: formState.role
+    }
+
+    if (formState.role === 'admin') {
+      body.name = formState.name
+      body.className = ''
+      body.password = formState.password
+    }
+
     await $fetch('/api/admin/roles/users', {
       method: 'POST',
-      body: {
-        userId: formState.userId,
-        name: formState.name,
-        className: isAdminType.value ? '' : formState.className,
-        role: formState.role,
-        password: formState.password
-      }
+      body
     })
 
     toast.add({ title: '创建成功' })
@@ -266,12 +329,43 @@ async function createUser() {
     resetForm()
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '创建失败', description })
   } finally {
     creating.value = false
   }
 }
+
+watch(() => formState.role, (role) => {
+  if (!editingId.value && role === 'classLeader') {
+    formState.name = ''
+    formState.className = ''
+    formState.password = ''
+    classLeaderLookupMessage.value = ''
+  }
+})
+
+watch(() => formState.userId, () => {
+  if (classLeaderLookupTimer) {
+    clearTimeout(classLeaderLookupTimer)
+    classLeaderLookupTimer = null
+  }
+
+  if (!isCreatingClassLeader.value) {
+    return
+  }
+
+  classLeaderLookupTimer = setTimeout(() => {
+    void fillClassLeaderProfileByUserId()
+  }, 300)
+})
+
+onBeforeUnmount(() => {
+  if (classLeaderLookupTimer) {
+    clearTimeout(classLeaderLookupTimer)
+    classLeaderLookupTimer = null
+  }
+})
 
 async function updateUser() {
   if (!editingId.value) {
@@ -283,12 +377,12 @@ async function updateUser() {
     const body = isEditingSuperAdmin.value
       ? { name: formState.name }
       : {
-        userId: formState.userId,
-        name: formState.name,
-        className: isAdminType.value ? '' : formState.className,
-        role: formState.role,
-        password: formState.password || undefined
-      }
+          userId: formState.userId,
+          name: formState.name,
+          className: isAdminType.value ? '' : formState.className,
+          role: formState.role,
+          password: formState.password || undefined
+        }
 
     await $fetch(`/api/admin/roles/users/${editingId.value}`, {
       method: 'PUT',
@@ -300,7 +394,7 @@ async function updateUser() {
     resetForm()
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '修改失败', description })
   } finally {
     updating.value = false
@@ -317,7 +411,7 @@ async function removeUser(id: string) {
     toast.add({ title: '删除成功' })
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '删除失败', description })
   } finally {
     deletingId.value = ''
@@ -340,7 +434,7 @@ async function resetPassword() {
     resetForm()
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '重置密码失败', description })
   } finally {
     resetting.value = false
@@ -365,53 +459,103 @@ async function resetPassword() {
     <template #body>
       <div class="space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <UInput v-model="keyword" icon="i-lucide-search" placeholder="搜索用户名/学号" class="max-w-sm" />
+          <UInput
+            v-model="keyword"
+            icon="i-lucide-search"
+            placeholder="搜索用户名/学号"
+            class="max-w-sm"
+          />
 
-          <UButton v-if="isSuperAdmin" icon="i-lucide-user-round-plus" color="primary" @click="openCreate">
+          <UButton
+            v-if="isSuperAdmin"
+            icon="i-lucide-user-round-plus"
+            color="primary"
+            @click="openCreate"
+          >
             添加角色
           </UButton>
         </div>
 
-        <UTable ref="tableRef" v-model:column-filters="columnFilters" v-model:column-visibility="columnVisibility"
-          v-model:sorting="sorting" v-model:row-selection="rowSelection" v-model:pagination="pagination"
-          :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }" :loading="status === 'pending'"
-          :data="usersData" :columns="columns" sticky class="w-full" />
+        <UTable
+          ref="tableRef"
+          v-model:column-filters="columnFilters"
+          v-model:column-visibility="columnVisibility"
+          v-model:sorting="sorting"
+          v-model:row-selection="rowSelection"
+          v-model:pagination="pagination"
+          :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }"
+          :loading="status === 'pending'"
+          :data="usersData"
+          :columns="columns"
+          sticky
+          class="w-full"
+        />
 
         <div class="flex items-center justify-between gap-3 border-t border-default pt-4">
           <div class="text-sm text-muted">
             {{ tableRef?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }} / {{
               tableRef?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
           </div>
-          <UPagination :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+          <UPagination
+            :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
             :items-per-page="tableRef?.tableApi?.getState().pagination.pageSize"
             :total="tableRef?.tableApi?.getFilteredRowModel().rows.length"
-            @update:page="p => tableRef?.tableApi?.setPageIndex(p - 1)" />
+            @update:page="p => tableRef?.tableApi?.setPageIndex(p - 1)"
+          />
         </div>
 
         <UModal v-model:open="createOpen" title="添加角色" :ui="{ content: 'max-w-2xl' }">
           <template #body>
-            <UForm id="create-role-user-form" :state="formState" :validate="validateForm"
-              :validate-on="['input', 'blur', 'change']" class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @submit="createUser">
+            <UForm
+              id="create-role-user-form"
+              :state="formState"
+              :validate="validateForm"
+              :validate-on="['input', 'blur', 'change']"
+              class="grid grid-cols-1 md:grid-cols-2 gap-4"
+              @submit="createUser"
+            >
               <UFormField name="role" label="角色">
                 <USelect v-model="formState.role" :items="roleItems" class="w-full" />
               </UFormField>
 
+              <UFormField name="userId" :label="userIdLabel">
+                <UInput
+                  v-model="formState.userId"
+                  :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
+                  class="w-full"
+                />
+                <p v-if="isCreatingClassLeader && classLeaderLookupMessage" class="text-xs text-muted mt-1">
+                  {{ classLeaderLookupMessage }}
+                </p>
+              </UFormField>
+
               <UFormField name="name" label="姓名">
-                <UInput v-model="formState.name" placeholder="请输入姓名" class="w-full" />
+                <UInput
+                  v-model="formState.name"
+                  :placeholder="isCreatingClassLeader ? '将根据学号自动填充' : '请输入姓名'"
+                  :loading="isCreatingClassLeader && classLeaderLookupLoading"
+                  :disabled="isCreatingClassLeader"
+                  class="w-full"
+                />
               </UFormField>
 
               <UFormField v-if="!isAdminType" name="className" label="班级">
-                <UInput v-model="formState.className" placeholder="请输入班级" class="w-full" />
+                <UInput
+                  v-model="formState.className"
+                  :placeholder="isCreatingClassLeader ? '将根据学号自动填充' : '请输入班级'"
+                  :loading="isCreatingClassLeader && classLeaderLookupLoading"
+                  :disabled="isCreatingClassLeader"
+                  class="w-full"
+                />
               </UFormField>
 
-              <UFormField name="userId" :label="userIdLabel">
-                <UInput v-model="formState.userId" :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
-                  class="w-full" />
-              </UFormField>
-
-              <UFormField name="password" label="密码">
-                <UInput v-model="formState.password" type="password" placeholder="至少10位且包含大小写字母和数字" class="w-full" />
+              <UFormField v-if="isAdminType" name="password" label="密码">
+                <UInput
+                  v-model="formState.password"
+                  type="password"
+                  placeholder="至少10位且包含大小写字母和数字"
+                  class="w-full"
+                />
               </UFormField>
             </UForm>
           </template>
@@ -430,9 +574,14 @@ async function resetPassword() {
 
         <UModal v-model:open="editOpen" title="修改角色" :ui="{ content: 'max-w-2xl' }">
           <template #body>
-            <UForm id="edit-role-user-form" :state="formState" :validate="validateForm"
-              :validate-on="['input', 'blur', 'change']" class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @submit="updateUser">
+            <UForm
+              id="edit-role-user-form"
+              :state="formState"
+              :validate="validateForm"
+              :validate-on="['input', 'blur', 'change']"
+              class="grid grid-cols-1 md:grid-cols-2 gap-4"
+              @submit="updateUser"
+            >
               <UFormField name="name" label="姓名">
                 <UInput v-model="formState.name" placeholder="请输入姓名" class="w-full" />
               </UFormField>
@@ -447,12 +596,20 @@ async function resetPassword() {
                 </UFormField>
 
                 <UFormField name="userId" :label="userIdLabel">
-                  <UInput v-model="formState.userId" :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
-                    class="w-full" />
+                  <UInput
+                    v-model="formState.userId"
+                    :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
+                    class="w-full"
+                  />
                 </UFormField>
 
                 <UFormField name="password" label="密码">
-                  <UInput v-model="formState.password" type="password" placeholder="至少10位且包含大小写字母和数字" class="w-full" />
+                  <UInput
+                    v-model="formState.password"
+                    type="password"
+                    placeholder="至少10位且包含大小写字母和数字"
+                    class="w-full"
+                  />
                 </UFormField>
               </template>
             </UForm>
@@ -461,8 +618,13 @@ async function resetPassword() {
           <template #footer>
             <div class="flex justify-between gap-2 w-full">
               <div>
-                <UButton v-if="!isEditingSuperAdmin" color="primary" variant="subtle" :loading="resetting"
-                  @click="resetPassword">
+                <UButton
+                  v-if="!isEditingSuperAdmin"
+                  color="primary"
+                  variant="subtle"
+                  :loading="resetting"
+                  @click="resetPassword"
+                >
                   重置密码
                 </UButton>
               </div>

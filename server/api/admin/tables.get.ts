@@ -5,7 +5,7 @@ import { listDynamicTables } from '../../utils/store'
 export default defineAuthedHandler({
   authorize: (user) => {
     if (!canManageTables(user)) {
-      throw createError({ statusCode: 403, statusMessage: '无权限查看表定义' })
+      throw createError({ statusCode: 403, message: '无权限查看表定义' })
     }
   },
   run: async () => {
@@ -17,5 +17,3 @@ export default defineAuthedHandler({
     detail: '查看表定义'
   }
 })
-
-

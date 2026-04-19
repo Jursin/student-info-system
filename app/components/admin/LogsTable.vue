@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { resolveComponent } from 'vue'
 import { getPaginationRowModel } from '@tanstack/table-core'
 import type { SortingState } from '@tanstack/table-core'
 import type { TableColumn } from '@nuxt/ui'
@@ -12,7 +11,13 @@ const UButton = resolveComponent('UButton')
 const action = ref('all')
 const keyword = ref('')
 
-const table = ref<any>(null)
+type LogsTableApiRef = {
+  getState: () => { pagination: { pageIndex: number, pageSize: number } }
+  getFilteredRowModel: () => { rows: unknown[] }
+  setPageIndex: (pageIndex: number) => void
+}
+
+const table = ref<{ tableApi?: LogsTableApiRef } | null>(null)
 const columnVisibility = ref<Record<string, boolean>>({})
 const sorting = ref<SortingState>([])
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
@@ -151,7 +156,7 @@ async function clearLogs() {
     clearFormState.endAt = ''
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({
       color: 'error',
       title: '清除失败',
@@ -169,50 +174,82 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
 })
-
 </script>
 
 <template>
   <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <UInput v-model="keyword" icon="i-lucide-search" placeholder="搜索操作者、动作或目标" class="w-64" />
+        <UInput
+          v-model="keyword"
+          icon="i-lucide-search"
+          placeholder="搜索操作者、动作或目标"
+          class="w-64"
+        />
       </div>
 
       <div class="flex items-center gap-2">
-
-        <UButton icon="i-lucide-trash-2" color="error" variant="outline" @click="clearOpen = true">
+        <UButton
+          icon="i-lucide-trash-2"
+          color="error"
+          variant="outline"
+          @click="clearOpen = true"
+        >
           清除日志
         </UButton>
       </div>
     </div>
 
-    <UTable ref="table" v-model:column-visibility="columnVisibility" v-model:sorting="sorting"
-      v-model:pagination="pagination" :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }"
-      :loading="status === 'pending'" :data="data" :columns="columns" sticky class="w-full" />
+    <UTable
+      ref="table"
+      v-model:column-visibility="columnVisibility"
+      v-model:sorting="sorting"
+      v-model:pagination="pagination"
+      :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }"
+      :loading="status === 'pending'"
+      :data="data"
+      :columns="columns"
+      sticky
+      class="w-full"
+    />
 
     <div class="flex items-center justify-end gap-3 border-t border-default pt-4">
-      <UPagination :default-page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+      <UPagination
+        :default-page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
         :items-per-page="table?.tableApi?.getState().pagination.pageSize"
         :total="table?.tableApi?.getFilteredRowModel().rows.length"
-        @update:page="p => table?.tableApi?.setPageIndex(p - 1)" />
+        @update:page="p => table?.tableApi?.setPageIndex(p - 1)"
+      />
     </div>
 
     <UModal v-model:open="clearOpen" title="清除操作日志">
       <template #body>
-        <UForm id="clear-log-form" :state="clearFormState" :validate-on="['change']" class="space-y-3"
-          @submit="clearLogs">
+        <UForm
+          id="clear-log-form"
+          :state="clearFormState"
+          :validate-on="['change']"
+          class="space-y-3"
+          @submit="clearLogs"
+        >
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <UFormField name="startAt" label="开始日期">
-              <UInputDate :model-value="toDateValue(clearFormState.startAt)"
+              <UInputDate
+                :model-value="toDateValue(clearFormState.startAt)"
+                locale="zh-CN"
+                icon="i-lucide-calendar-days"
+                class="w-full"
                 @update:model-value="value => clearFormState.startAt = fromDateValue(value as { year: number, month: number, day: number } | null)"
-                locale="zh-CN" icon="i-lucide-calendar-days" class="w-full" />
+              />
             </UFormField>
 
             <UFormField name="endAt" label="结束日期">
-              <UInputDate :model-value="toDateValue(clearFormState.endAt)"
+              <UInputDate
+                :model-value="toDateValue(clearFormState.endAt)"
+                locale="zh-CN"
+                icon="i-lucide-calendar-days"
+                class="w-full"
                 @update:model-value="value => clearFormState.endAt = fromDateValue(value as { year: number, month: number, day: number } | null)"
-                locale="zh-CN" icon="i-lucide-calendar-days" class="w-full" />
+              />
             </UFormField>
           </div>
           <p class="text-sm text-muted">
@@ -226,7 +263,12 @@ onBeforeUnmount(() => {
           <UButton color="neutral" variant="ghost" @click="clearOpen = false">
             取消
           </UButton>
-          <UButton type="submit" form="clear-log-form" color="error" :loading="clearLoading">
+          <UButton
+            type="submit"
+            form="clear-log-form"
+            color="error"
+            :loading="clearLoading"
+          >
             确认清除
           </UButton>
         </div>

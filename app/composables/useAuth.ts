@@ -6,7 +6,7 @@ export const useAuth = () => {
 
   const isLoggedIn = computed(() => !!user.value)
 
-  const requestFetch = process.server ? useRequestFetch() : $fetch
+  const requestFetch = import.meta.server ? useRequestFetch() : $fetch
 
   async function refreshSession() {
     const data = await requestFetch<{ user: SessionUser | null }>('/api/auth/session')

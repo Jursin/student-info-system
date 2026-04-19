@@ -1,6 +1,4 @@
-import { h } from 'vue'
-
-export function buildSortableHeader(UButton: any, column: any, label: string) {
+export function buildSortableHeader(UButton: string | Component, column: { getIsSorted: () => 'asc' | 'desc' | false, toggleSorting: (desc?: boolean) => void }, label: string) {
   const isSorted = column.getIsSorted()
 
   return h(UButton, {

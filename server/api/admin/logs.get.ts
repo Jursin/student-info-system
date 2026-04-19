@@ -5,7 +5,7 @@ import { listOperationLogs } from '../../utils/store'
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
   if (!canViewLogs(user)) {
-    throw createError({ statusCode: 403, statusMessage: '无权限查看日志' })
+    throw createError({ statusCode: 403, message: '无权限查看日志' })
   }
 
   const query = getQuery(event)
@@ -14,5 +14,3 @@ export default eventHandler(async (event) => {
 
   return listOperationLogs({ action, target })
 })
-
-

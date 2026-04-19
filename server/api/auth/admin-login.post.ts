@@ -16,20 +16,20 @@ export default eventHandler(async (event) => {
   const remember = !!body?.remember
 
   if (!userId || !password) {
-    throw createError({ statusCode: 400, statusMessage: '请输入用户名/学号和密码' })
+    throw createError({ statusCode: 400, message: '请输入用户名/学号和密码' })
   }
 
   const user = await findUserByUserId(userId)
   if (!user || (user.role !== 'admin' && user.role !== 'superAdmin')) {
-    throw createError({ statusCode: 401, statusMessage: '账号或密码错误' })
+    throw createError({ statusCode: 401, message: '账号或密码错误' })
   }
 
   if (!isStrongPassword(password)) {
-    throw createError({ statusCode: 400, statusMessage: '密码格式不符合策略' })
+    throw createError({ statusCode: 400, message: '密码格式不符合策略' })
   }
 
   if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
-    throw createError({ statusCode: 423, statusMessage: '密码错误次数过多，账号已锁定5分钟' })
+    throw createError({ statusCode: 423, message: '密码错误次数过多，账号已锁定5分钟' })
   }
 
   const ok = verifyPassword(password, user.passwordHash)
@@ -44,7 +44,7 @@ export default eventHandler(async (event) => {
       lockUntil
     })
 
-    throw createError({ statusCode: 401, statusMessage: '账号或密码错误' })
+    throw createError({ statusCode: 401, message: '账号或密码错误' })
   }
 
   await updateUserAuthState({
@@ -86,5 +86,3 @@ export default eventHandler(async (event) => {
     }
   }
 })
-
-

@@ -4,7 +4,7 @@ import { listUserAccounts } from '../../../utils/store'
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
   if (user.role !== 'admin' && user.role !== 'superAdmin') {
-    throw createError({ statusCode: 403, statusMessage: '无权限查看角色管理' })
+    throw createError({ statusCode: 403, message: '无权限查看角色管理' })
   }
 
   const users = await listUserAccounts({
@@ -20,5 +20,3 @@ export default eventHandler(async (event) => {
     role: item.role
   }))
 })
-
-

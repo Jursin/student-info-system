@@ -26,7 +26,7 @@ interface CreateBody {
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
   if (!canManageAllStudents(user)) {
-    throw createError({ statusCode: 403, statusMessage: '只有管理员可新增学生' })
+    throw createError({ statusCode: 403, message: '只有管理员可新增学生' })
   }
 
   const body = await readBody<CreateBody>(event)
@@ -37,26 +37,26 @@ export default eventHandler(async (event) => {
 
   const table = tableId ? await findDynamicTableById(tableId) : null
   if (tableId && !table) {
-    throw createError({ statusCode: 404, statusMessage: '目标信息表不存在' })
+    throw createError({ statusCode: 404, message: '目标信息表不存在' })
   }
 
   const isBasicInfoTarget = !tableId || tableId === BASIC_INFO_TABLE_ID
 
   if (!userId || !name) {
-    throw createError({ statusCode: 400, statusMessage: '用户名/学号、姓名不能为空' })
+    throw createError({ statusCode: 400, message: '用户名/学号、姓名不能为空' })
   }
 
   if (body.phone && !/^\d{11}$/.test(body.phone)) {
-    throw createError({ statusCode: 400, statusMessage: '手机号必须为11位数字' })
+    throw createError({ statusCode: 400, message: '手机号必须为11位数字' })
   }
 
   if (body.guardianPhone && !/^\d{11}$/.test(body.guardianPhone)) {
-    throw createError({ statusCode: 400, statusMessage: '监护人手机号必须为11位数字' })
+    throw createError({ statusCode: 400, message: '监护人手机号必须为11位数字' })
   }
 
   const existing = await getStudentProfileByUserId(userId)
   if (existing && isBasicInfoTarget) {
-    throw createError({ statusCode: 400, statusMessage: '用户名/学号已存在' })
+    throw createError({ statusCode: 400, message: '用户名/学号已存在' })
   }
 
   let result
@@ -95,17 +95,16 @@ export default eventHandler(async (event) => {
 
   return result
     ? {
-      userId: result.userId,
-      name: result.name,
-      className: result.className,
-      gender: result.gender,
-      birthDate: result.birthDate,
-      phone: result.phone,
-      address: result.address,
-      guardianPhone: result.guardianPhone,
-      major: result.major,
-      passwordHash: result.passwordHash
-    }
+        userId: result.userId,
+        name: result.name,
+        className: result.className,
+        gender: result.gender,
+        birthDate: result.birthDate,
+        phone: result.phone,
+        address: result.address,
+        guardianPhone: result.guardianPhone,
+        major: result.major,
+        passwordHash: result.passwordHash
+      }
     : result
 })
-

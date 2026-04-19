@@ -16,27 +16,27 @@ interface UpdateTableBody {
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
   if (!canManageTables(user)) {
-    throw createError({ statusCode: 403, statusMessage: '无权限修改表' })
+    throw createError({ statusCode: 403, message: '无权限修改表' })
   }
 
   const id = getRouterParam(event, 'id')
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: '缺少表标识' })
+    throw createError({ statusCode: 400, message: '缺少表标识' })
   }
 
   const body = await readBody<UpdateTableBody>(event)
   const current = await findDynamicTableById(id)
   if (!current) {
-    throw createError({ statusCode: 404, statusMessage: '表不存在' })
+    throw createError({ statusCode: 404, message: '表不存在' })
   }
 
   const nextName = body.name?.trim()
   if (body.name !== undefined && !nextName) {
-    throw createError({ statusCode: 400, statusMessage: '表名不能为空' })
+    throw createError({ statusCode: 400, message: '表名不能为空' })
   }
 
   if (id === BASIC_INFO_TABLE_ID && body.name !== undefined && nextName !== current.name) {
-    throw createError({ statusCode: 400, statusMessage: '基本信息表不允许重命名' })
+    throw createError({ statusCode: 400, message: '基本信息表不允许重命名' })
   }
 
   const fields = body.fields
@@ -75,7 +75,7 @@ export default eventHandler(async (event) => {
   })
 
   if (!updated) {
-    throw createError({ statusCode: 404, statusMessage: '表不存在' })
+    throw createError({ statusCode: 404, message: '表不存在' })
   }
 
   await appendUserLog(user, 'update', 'tables', `修改表 ${current.name}`)

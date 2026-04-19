@@ -28,7 +28,7 @@ async function updatePassword() {
     state.newPassword = ''
     toast.add({ title: '密码修改成功' })
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({
       color: 'error',
       title: '密码修改失败',
@@ -70,11 +70,21 @@ async function updatePassword() {
             @submit="updatePassword"
           >
             <UFormField name="currentPassword" label="当前密码">
-              <UInput v-model="state.currentPassword" type="password" placeholder="请输入当前密码" class="w-full md:w-100" />
+              <UInput
+                v-model="state.currentPassword"
+                type="password"
+                placeholder="请输入当前密码"
+                class="w-full md:w-100"
+              />
             </UFormField>
 
             <UFormField name="newPassword" label="新密码">
-              <UInput v-model="state.newPassword" type="password" placeholder="至少10位且包含大小写字母和数字" class="w-full md:w-100" />
+              <UInput
+                v-model="state.newPassword"
+                type="password"
+                placeholder="至少10位且包含大小写字母和数字"
+                class="w-full md:w-100"
+              />
             </UFormField>
 
             <div class="md:basis-full flex justify-start w-full">

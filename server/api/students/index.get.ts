@@ -34,4 +34,3 @@ export default eventHandler(async (event) => {
     passwordHash: item.passwordHash
   }))
 })
-

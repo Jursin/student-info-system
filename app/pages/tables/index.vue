@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
 import { useSortable } from '@vueuse/integrations/useSortable'
-import type { Row } from '@tanstack/table-core'
-import { getPaginationRowModel } from '@tanstack/table-core'
-import type { SortingState } from '@tanstack/table-core'
+import { getPaginationRowModel, type Row, type SortingState } from '@tanstack/table-core'
+
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import type { DynamicTable } from '~/types'
 import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
@@ -33,10 +31,17 @@ const UCheckbox = resolveComponent('UCheckbox')
 const UButton = resolveComponent('UButton')
 const UDropdownMenu = resolveComponent('UDropdownMenu')
 
+type TablesListApiRef = {
+  getFilteredSelectedRowModel: () => { rows: Array<{ original: TableRow }> }
+  getFilteredRowModel: () => { rows: Array<{ original: TableRow }> }
+  getState: () => { pagination: { pageIndex: number, pageSize: number } }
+  setPageIndex: (pageIndex: number) => void
+}
+
 const toast = useToast()
 const { isAdmin } = useRole()
 const router = useRouter()
-const tableRef = ref<any>(null)
+const tableRef = ref<{ tableApi?: TablesListApiRef } | null>(null)
 const pollTimer = ref<number | null>(null)
 const tableSorting = ref<SortingState>([])
 const createFieldSorting = ref<SortingState>([])
@@ -90,11 +95,11 @@ const filteredTableRows = computed(() => {
 })
 
 const typeMap: Record<string, string> = {
-  'text': '文本',
-  'number': '纯数字',
-  'chinese': '纯汉字',
-  'date': '日期',
-  'singleChoice': '单选'
+  text: '文本',
+  number: '纯数字',
+  chinese: '纯汉字',
+  date: '日期',
+  singleChoice: '单选'
 }
 
 function removeField(index: number) {
@@ -182,7 +187,7 @@ const editFieldsTableWrap = ref<HTMLElement | null>(null)
 const fieldsSortable = ref<{ stop?: () => void } | null>(null)
 
 function setupFieldsSortable(target: HTMLElement | null) {
-  if (!process.client || !target) {
+  if (!import.meta.client || !target) {
     return
   }
 
@@ -192,11 +197,7 @@ function setupFieldsSortable(target: HTMLElement | null) {
   }
 
   fieldsSortable.value?.stop?.()
-  fieldsSortable.value = useSortable(tbody, fields, {
-    animation: 150,
-    ghostClass: 'opacity-50',
-    handle: '.field-drag-handle'
-  } as any)
+  fieldsSortable.value = useSortable(tbody, fields)
 }
 
 watch([createOpen, editOpen], async ([isCreateOpen, isEditOpen]) => {
@@ -269,16 +270,16 @@ const columns: TableColumn<TableRow>[] = [
   {
     id: 'select',
     header: ({ table }) => h(UCheckbox, {
-      modelValue: table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
+      'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
       'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
       'aria-label': 'Select all',
-      class: 'align-middle'
+      'class': 'align-middle'
     }),
     cell: ({ row }) => h(UCheckbox, {
-      modelValue: row.getIsSelected(),
+      'modelValue': row.getIsSelected(),
       'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
       'aria-label': 'Select row',
-      class: 'align-middle'
+      'class': 'align-middle'
     }),
     enableHiding: false
   },
@@ -374,13 +375,6 @@ function openEditModal(id: string) {
   editingId.value = id
   designerState.tableName = current.name
   fields.value = current.fields
-    .filter(field => {
-      if (current.id === BASIC_INFO_TABLE_ID) {
-        return true
-      }
-
-      return true
-    })
     .map(field => ({
       key: field.key,
       label: field.label,
@@ -426,7 +420,7 @@ async function submitTable() {
     await refreshNuxtData('/api/tables')
     window.location.reload()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({
       color: 'error',
       title: isEditing.value ? '修改失败' : '创建失败',
@@ -452,7 +446,7 @@ async function removeTable(id: string, options: { reload?: boolean } = {}) {
       window.location.reload()
     }
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '删除失败', description })
   } finally {
     deletingIds.value = deletingIds.value.filter(item => item !== id)
@@ -462,7 +456,7 @@ async function removeTable(id: string, options: { reload?: boolean } = {}) {
 async function removeSelectedTables() {
   const selectedRows = tableRef.value?.tableApi?.getFilteredSelectedRowModel().rows || []
   const ids = selectedRows
-    .map((row: any) => row.original.id)
+    .map(row => row.original.id)
     .filter((id: string) => id !== BASIC_INFO_TABLE_ID)
   if (!ids.length) {
     return
@@ -612,10 +606,21 @@ onBeforeUnmount(() => {
                 </UFormField>
 
                 <UFormField v-if="designerState.fieldType !== 'singleChoice' && designerState.fieldType !== 'date'" label="位数限制" class="w-20">
-                  <UInput v-model.number="designerState.fieldLimit" type="number" placeholder="可选" class="w-full" />
+                  <UInput
+                    v-model.number="designerState.fieldLimit"
+                    type="number"
+                    placeholder="可选"
+                    class="w-full"
+                  />
                 </UFormField>
 
-                <UButton type="button" variant="outline" icon="i-lucide-plus" class="w-auto h-8" @click="addField">
+                <UButton
+                  type="button"
+                  variant="outline"
+                  icon="i-lucide-plus"
+                  class="w-auto h-8"
+                  @click="addField"
+                >
                   添加字段
                 </UButton>
               </div>
@@ -676,10 +681,21 @@ onBeforeUnmount(() => {
                 </UFormField>
 
                 <UFormField v-if="designerState.fieldType !== 'singleChoice' && designerState.fieldType !== 'date'" label="位数限制" class="w-22">
-                  <UInput v-model.number="designerState.fieldLimit" type="number" placeholder="可选" class="w-full" />
+                  <UInput
+                    v-model.number="designerState.fieldLimit"
+                    type="number"
+                    placeholder="可选"
+                    class="w-full"
+                  />
                 </UFormField>
 
-                <UButton type="button" variant="outline" icon="i-lucide-plus" class="w-auto" @click="addField">
+                <UButton
+                  type="button"
+                  variant="outline"
+                  icon="i-lucide-plus"
+                  class="w-auto"
+                  @click="addField"
+                >
                   添加字段
                 </UButton>
               </div>

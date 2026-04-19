@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { parseDate } from '@internationalized/date'
+import type { DateValue } from '@internationalized/date'
 import type { DynamicTable, OperationLog, StudentProfile } from '~/types'
 
 const { isAdmin } = useRole()
@@ -31,8 +31,10 @@ const tableCount = computed(() => isAdmin.value ? tables.value.length : 0)
 
 const trendRange = ref<TrendRange>('7d')
 const customRangeOpen = ref(false)
-const trendCustomStart = ref<any>(null)
-const trendCustomEnd = ref<any>(null)
+const trendCustomStart = ref<{ year?: number, month?: number, day?: number } | null>(null)
+const trendCustomEnd = ref<{ year?: number, month?: number, day?: number } | null>(null)
+const trendCustomStartModel = computed(() => trendCustomStart.value as DateValue | null)
+const trendCustomEndModel = computed(() => trendCustomEnd.value as DateValue | null)
 const trendAllKeys: TrendKey[] = ['login', 'create', 'delete', 'update']
 const selectedTrendKeys = ref<TrendKey[]>([...trendAllKeys])
 
@@ -160,8 +162,19 @@ function setDefaultCustomRange() {
   const lastYearToday = new Date(today)
   lastYearToday.setFullYear(today.getFullYear() - 1)
 
-  trendCustomStart.value = parseDate(toDateText(lastYearToday))
-  trendCustomEnd.value = parseDate(toDateText(today))
+  const startText = toDateText(lastYearToday)
+  const endText = toDateText(today)
+
+  trendCustomStart.value = {
+    year: Number(startText.slice(0, 4)),
+    month: Number(startText.slice(5, 7)),
+    day: Number(startText.slice(8, 10))
+  }
+  trendCustomEnd.value = {
+    year: Number(endText.slice(0, 4)),
+    month: Number(endText.slice(5, 7)),
+    day: Number(endText.slice(8, 10))
+  }
 }
 
 watch(trendRange, (value) => {
@@ -319,27 +332,6 @@ const trendChartData = computed(() => trendSeries.value.map(item => ({
   update: item.update
 })))
 
-const recentLogs = computed(() => {
-  if (!isAdmin.value) {
-    return []
-  }
-
-  return logs.value.slice(0, 8).map(item => ({
-    timestamp: new Date(item.timestamp).toLocaleString('zh-CN', {
-      timeZone: 'Asia/Shanghai',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }),
-    operatorName: item.operatorName,
-    action: item.action,
-    target: item.target,
-    detail: item.detail
-  }))
-})
-
 const trendTooltipStyle = {
   '--vis-tooltip-background-color': 'var(--ui-bg)',
   '--vis-tooltip-border-color': 'var(--ui-border)',
@@ -358,6 +350,13 @@ function applyCustomRange() {
   customRangeOpen.value = false
 }
 
+function updateTrendCustomStart(value: unknown) {
+  trendCustomStart.value = (value ?? null) as { year?: number, month?: number, day?: number } | null
+}
+
+function updateTrendCustomEnd(value: unknown) {
+  trendCustomEnd.value = (value ?? null) as { year?: number, month?: number, day?: number } | null
+}
 </script>
 
 <template>
@@ -473,7 +472,6 @@ function applyCustomRange() {
           </div>
 
           <div v-else class="space-y-2">
-
             <LineChart
               :style="trendTooltipStyle"
               :data="trendChartData"
@@ -497,19 +495,21 @@ function applyCustomRange() {
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <UFormField label="开始日期">
                   <UInputDate
-                    v-model="trendCustomStart"
+                    :model-value="trendCustomStartModel"
                     locale="zh-CN"
                     icon="i-lucide-calendar-days"
                     class="w-full"
+                    @update:model-value="updateTrendCustomStart"
                   />
                 </UFormField>
 
                 <UFormField label="结束日期">
                   <UInputDate
-                    v-model="trendCustomEnd"
+                    :model-value="trendCustomEndModel"
                     locale="zh-CN"
                     icon="i-lucide-calendar-days"
                     class="w-full"
+                    @update:model-value="updateTrendCustomEnd"
                   />
                 </UFormField>
               </div>

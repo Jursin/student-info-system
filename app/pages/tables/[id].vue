@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
-import type { Row, SortingState } from '@tanstack/table-core'
-import { getPaginationRowModel } from '@tanstack/table-core'
+import { getPaginationRowModel, type Row, type SortingState } from '@tanstack/table-core'
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import type { DynamicTable } from '~/types'
 import { fromDateValue, toDateValue } from '~/utils/date'
@@ -12,10 +10,25 @@ const UCheckbox = resolveComponent('UCheckbox')
 const UButton = resolveComponent('UButton')
 const UDropdownMenu = resolveComponent('UDropdownMenu')
 
+type RowRecord = Record<string, string>
+type TableColumnApi = {
+  id: string
+  getCanHide: () => boolean
+  getIsVisible: () => boolean
+}
+type TableApiRef = {
+  getAllColumns: () => TableColumnApi[]
+  getColumn: (id: string) => { toggleVisibility: (visible: boolean) => void } | undefined
+  getFilteredSelectedRowModel: () => { rows: Array<{ original: RowRecord }> }
+  getFilteredRowModel: () => { rows: Array<{ original: RowRecord }> }
+  getState: () => { pagination: { pageIndex: number, pageSize: number } }
+  setPageIndex: (pageIndex: number) => void
+}
+
 const toast = useToast()
 const { isAdmin } = useRole()
 const route = useRoute()
-const table = ref<any>(null)
+const table = ref<{ tableApi?: TableApiRef } | null>(null)
 const pollTimer = ref<number | null>(null)
 
 const addOpen = ref(false)
@@ -56,14 +69,19 @@ const rowSelection = ref({})
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 const searchKeyword = ref('')
 
+const hasUserIdField = computed(() => tableData.value.table.fields.some(field => field.key === 'userId'))
+const hasNameField = computed(() => tableData.value.table.fields.some(field => field.key === 'name'))
+
 function validateStudentForm(state: Record<string, string>) {
   const errors: Array<{ name: string, message: string }> = []
+  const userId = String(state.userId ?? '').trim()
+  const name = String(state.name ?? '').trim()
 
-  if (!state.userId?.trim()) {
+  if (hasUserIdField.value && !userId) {
     errors.push({ name: 'userId', message: '请输入学号' })
   }
 
-  if (!state.name?.trim()) {
+  if (hasNameField.value && !name) {
     errors.push({ name: 'name', message: '请输入姓名' })
   }
 
@@ -82,8 +100,8 @@ const displayColumnItems = computed(() => {
 
   return tableApi
     .getAllColumns()
-    .filter((column: any) => column.getCanHide() && !['select', 'actions'].includes(column.id))
-    .map((column: any) => ({
+    .filter(column => column.getCanHide() && !['select', 'actions'].includes(column.id))
+    .map(column => ({
       label: labelMap[column.id] || column.id,
       type: 'checkbox',
       checked: column.getIsVisible(),
@@ -94,10 +112,6 @@ const displayColumnItems = computed(() => {
         e?.preventDefault()
       }
     }))
-})
-
-const searchColumnId = computed(() => {
-  return tableData.value.table.fields[0]?.key || 'userId'
 })
 
 const filteredRows = computed(() => {
@@ -117,16 +131,20 @@ function createEmptyFormState() {
 }
 
 function toStudentPayload(row: Record<string, string>) {
+  const userId = String(row.userId ?? '').trim()
+  const name = String(row.name ?? '').trim()
+  const className = String(row.className ?? '').trim()
+
   return {
-    userId: (row.userId || '').trim(),
-    name: (row.name || '').trim(),
-    className: (row.className || '').trim(),
-    gender: row.gender || '',
-    birthDate: row.birthDate || '',
-    phone: row.phone || '',
-    address: row.address || '',
-    guardianPhone: row.guardianPhone || '',
-    major: row.major || ''
+    userId,
+    name,
+    className,
+    gender: String(row.gender ?? ''),
+    birthDate: String(row.birthDate ?? ''),
+    phone: String(row.phone ?? ''),
+    address: String(row.address ?? ''),
+    guardianPhone: String(row.guardianPhone ?? ''),
+    major: String(row.major ?? '')
   }
 }
 
@@ -161,6 +179,15 @@ const isCoreField = (key: string) => ['userId', 'name'].includes(key)
 const isFieldReadonlyInEdit = (key: string) => isEditingForm.value && !isBasicInfoTable.value && isCoreField(key)
 
 async function submitFormPanel() {
+  if (!isEditingForm.value && (!hasUserIdField.value || !hasNameField.value)) {
+    toast.add({
+      color: 'error',
+      title: '添加失败',
+      description: '当前信息表缺少学号或姓名字段，无法新增学生信息'
+    })
+    return
+  }
+
   if (isEditingForm.value) {
     await updateRow()
     return
@@ -187,7 +214,7 @@ async function addRow() {
     addOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '添加失败', description })
   } finally {
     submitting.value = false
@@ -212,7 +239,7 @@ async function updateRow() {
     editOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '修改失败', description })
   } finally {
     submitting.value = false
@@ -233,7 +260,7 @@ async function resetPassword() {
     editOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '重置密码失败', description })
   } finally {
     submitting.value = false
@@ -251,7 +278,7 @@ async function deleteRow(userId: string) {
     toast.add({ title: `已删除 ${userId}` })
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || '请稍后重试'
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '删除失败', description })
   } finally {
     deletingIds.value = deletingIds.value.filter(id => id !== userId)
@@ -260,14 +287,16 @@ async function deleteRow(userId: string) {
 
 async function deleteSelectedRows() {
   const selectedRows = table.value?.tableApi?.getFilteredSelectedRowModel().rows || []
-  const ids = selectedRows.map((row: any) => row.original.userId).filter(Boolean)
+  const ids = selectedRows
+    .map(row => row.original.userId)
+    .filter((id): id is string => Boolean(id))
 
   for (const id of ids) {
     await deleteRow(id)
   }
 }
 
-function getRowItems(row: Row<Record<string, string>>) {
+function getRowItems(row: Row<RowRecord>) {
   const items: DropdownMenuItem[] = []
 
   if (isAdmin.value) {
@@ -287,28 +316,28 @@ function getRowItems(row: Row<Record<string, string>>) {
   return items
 }
 
-const columns = computed<TableColumn<Record<string, string>>[]>(() => {
+const columns = computed<TableColumn<RowRecord>[]>(() => {
   const fieldColumns = tableData.value.table.fields
     .filter(field => field.key !== 'password')
     .map(field => ({
       accessorKey: field.key,
-      header: ({ column }: { column: any }) => buildSortableHeader(UButton, column, field.label)
+      header: ({ column }: { column: { getIsSorted: () => 'asc' | 'desc' | false, toggleSorting: (desc?: boolean) => void } }) => buildSortableHeader(UButton, column, field.label)
     }))
 
   return [
     {
       id: 'select',
       header: ({ table }) => h(UCheckbox, {
-        modelValue: table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
+        'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
         'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
         'aria-label': 'Select all',
-        class: 'align-middle'
+        'class': 'align-middle'
       }),
       cell: ({ row }) => h(UCheckbox, {
-        modelValue: row.getIsSelected(),
+        'modelValue': row.getIsSelected(),
         'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
         'aria-label': 'Select row',
-        class: 'align-middle'
+        'class': 'align-middle'
       }),
       enableHiding: false
     },
@@ -386,7 +415,13 @@ onBeforeUnmount(() => {
           />
 
           <div class="flex items-center gap-2">
-            <UBadge v-if="!isBasicInfoTable" icon="i-lucide-chart-bar" size="lg" color="primary" variant="subtle">
+            <UBadge
+              v-if="!isBasicInfoTable"
+              icon="i-lucide-chart-bar"
+              size="lg"
+              color="primary"
+              variant="subtle"
+            >
               {{ tableTypeLabel }}
             </UBadge>
 
@@ -406,10 +441,20 @@ onBeforeUnmount(() => {
             </UButton>
 
             <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
-              <UButton icon="i-lucide-settings-2" label="展示" color="neutral" variant="outline" />
+              <UButton
+                icon="i-lucide-settings-2"
+                label="展示"
+                color="neutral"
+                variant="outline"
+              />
             </UDropdownMenu>
 
-            <UButton v-if="isAdmin" icon="i-lucide-list-plus" color="primary" @click="openAddModal">
+            <UButton
+              v-if="isAdmin"
+              icon="i-lucide-list-plus"
+              color="primary"
+              @click="openAddModal"
+            >
               添加信息
             </UButton>
           </div>
@@ -509,7 +554,6 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </UModal>
-
       </div>
     </template>
   </UDashboardPanel>

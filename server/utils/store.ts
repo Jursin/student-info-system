@@ -737,7 +737,7 @@ export async function updateUserAccountByUserId(userId: string, params: {
   if (nextUserId !== userId) {
     const exists = await prisma.userAccount.findUnique({ where: { userId: nextUserId } })
     if (exists) {
-      throw createError({ statusCode: 400, statusMessage: '用户名或学号已存在' })
+      throw createError({ statusCode: 400, message: '用户名或学号已存在' })
     }
   }
 
@@ -811,7 +811,7 @@ export async function updateStudentRecord(userId: string, body: {
   if (targetUserId !== userId) {
     const exists = await prisma.studentProfile.findUnique({ where: { userId: targetUserId } })
     if (exists) {
-      throw createError({ statusCode: 400, statusMessage: '学号已存在' })
+      throw createError({ statusCode: 400, message: '学号已存在' })
     }
   }
 
@@ -852,4 +852,3 @@ export async function updateStudentRecord(userId: string, body: {
 
   return prisma.studentProfile.findUnique({ where: { userId: targetUserId } })
 }
-

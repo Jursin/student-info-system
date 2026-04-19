@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js';
+import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import * as z from 'zod'
 
 const props = withDefaults(defineProps<{
@@ -15,6 +15,7 @@ const emit = defineEmits<{
 const toast = useToast()
 const loading = ref(false)
 const rememberLogin = ref(false)
+const showPassword = ref(false)
 const accountLabel = computed(() => props.mode === 'admin' ? '用户名' : '学号')
 
 const schema = z.object({
@@ -40,7 +41,7 @@ async function onSubmit() {
     toast.add({ title: '登录成功' })
     emit('success')
   } catch (error: unknown) {
-    const description = (error as { data?: { statusMessage?: string } })?.data?.statusMessage || `请检查${accountLabel.value}和密码`
+    const description = (error as { data?: { message?: string } })?.data?.message || `请检查${accountLabel.value}和密码`
     toast.add({
       color: 'error',
       title: '登录失败',
@@ -69,13 +70,34 @@ async function onSubmit() {
       </div>
     </template>
 
-    <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
+    <UForm
+      :schema="schema"
+      :state="state"
+      class="space-y-4"
+      @submit="onSubmit"
+    >
       <UFormField :label="accountLabel" name="userId">
         <UInput v-model="state.userId" :placeholder="`请输入${accountLabel}`" class="w-full" />
       </UFormField>
 
       <UFormField label="密码" name="password">
-        <UInput v-model="state.password" type="password" placeholder="请输入密码" class="w-full" />
+        <UInput
+          v-model="state.password"
+          :type="showPassword ? 'text' : 'password'"
+          placeholder="请输入密码"
+          class="w-full"
+        >
+          <template #trailing>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :icon="showPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+              :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+              @click="showPassword = !showPassword"
+            />
+          </template>
+        </UInput>
       </UFormField>
 
       <UCheckbox v-model="rememberLogin" label="记住登录状态" />

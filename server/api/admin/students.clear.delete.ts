@@ -5,7 +5,7 @@ import { clearStudentProfiles } from '../../utils/store'
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
   if (!isSuperAdmin(user)) {
-    throw createError({ statusCode: 403, statusMessage: '仅超级管理员可清空数据' })
+    throw createError({ statusCode: 403, message: '仅超级管理员可清空数据' })
   }
 
   await clearStudentProfiles()
@@ -14,5 +14,3 @@ export default eventHandler(async (event) => {
 
   return { ok: true }
 })
-
-

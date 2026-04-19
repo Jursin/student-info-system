@@ -14,7 +14,7 @@ export async function getSessionUser(event: H3Event) {
 export async function requireSessionUser(event: H3Event) {
   const user = await getSessionUser(event)
   if (!user) {
-    throw createError({ statusCode: 401, statusMessage: '请先登录' })
+    throw createError({ statusCode: 401, message: '请先登录' })
   }
 
   return user
