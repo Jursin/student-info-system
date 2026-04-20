@@ -544,8 +544,14 @@ export async function updateDynamicTableById(id: string, params: {
 export async function deleteDynamicTableById(id: string): Promise<boolean> {
   await ensureSeedData()
 
-  const result = await db.delete(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
-  return (result.rowCount ?? 0) > 0
+  const deleted = await db.transaction(async (tx) => {
+    await tx.delete(schema.dynamicTableRows).where(eq(schema.dynamicTableRows.tableId, id))
+    await tx.delete(schema.dynamicFields).where(eq(schema.dynamicFields.tableId, id))
+    const result = await tx.delete(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
+    return result.rowCount ?? 0
+  })
+
+  return deleted > 0
 }
 
 export async function listDynamicTableUserIds(tableId: string): Promise<string[]> {

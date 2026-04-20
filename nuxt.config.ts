@@ -22,6 +22,16 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2024-07-11',
 
+  nitro: {
+    imports: {
+      warn(msg) {
+        if (!msg.includes('Duplicated imports "useAppConfig"')) {
+          console.warn(msg)
+        }
+      }
+    }
+  },
+
   vite: {
     optimizeDeps: {
       include: ['zod']

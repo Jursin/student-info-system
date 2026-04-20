@@ -8,7 +8,14 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&labelColor=10233E)](https://www.postgresql.org)
 [![pnpm](https://img.shields.io/badge/pnpm-10.33-F69220?logo=pnpm&labelColor=1A1A1A)](https://pnpm.io)
 
-基于 Nuxt 4 构建的学生信息管理系统，提供学生信息、角色管理、动态信息表、日志审计等能力，面向管理员、班委和学生场景
+使用 Nuxt 4 构建的全栈网站，提供可视化仪表盘、角色管理、动态信息表、日志审计等功能，解决传统问卷收集学生信息方式存在的诸多如数据孤立、重复填写、信息变更不便、学生无法核验等弊端
+
+## 项目说明
+
+- 网站包含仪表盘、角色管理、信息表和操作日志等页面
+- 管理员可以方便地收集、管理、持久化存储学生信息
+- 设置多种角色和分配适当权限以辅助管理员收集学生信息
+- 记录各种动作的操作日志方便管理员查看
 
 ## 技术栈
 
@@ -38,6 +45,8 @@ pnpm install
 
 在项目根目录复制 `.env.example` 为 `.env`，并配置数据库链接
 
+> [!tip]
+> 请先创建好数据库
 
 ### 初始化数据库
 
@@ -49,9 +58,11 @@ pnpm run db:seed
 ```
 
 > [!tip]
-> - `db:push` 会将 Drizzle Schema 推送到数据库，`db:seed` 会写入初始超级管理员和基础数据。
+> - `db:push` 会将 Drizzle Schema 推送到数据库，`db:seed` 会写入初始超级管理员和基础数据
 >
 > - 使用 `pnpm run db:studio` 启动数据库管理界面
+>
+> - 使用 `pnpm run db:reset` 重置数据库并重新应用迁移
 
 ### 启动开发服务器
 
@@ -65,13 +76,6 @@ pnpm run dev
 > - 使用 `pnpm run build` 构建生产版本
 >
 > - 使用 `pnpm run preview` 本地预览生产构建
-
-## 项目说明
-
-- 系统包含学生信息、角色管理、动态表管理和操作日志等功能
-- 管理员可以维护学生档案、信息表和角色数据
-- 班委和学生按权限访问各自可见的数据范围
-- 运行日志、登录日志和操作日志均在系统内统一管理
 
 ## 部署前检查
 

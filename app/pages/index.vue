@@ -2,7 +2,7 @@
 import type { DateValue } from '@internationalized/date'
 import type { DynamicTable, OperationLog, StudentProfile } from '~/types'
 
-const { isAdmin } = useRole()
+const { isAdmin, isStudent } = useRole()
 
 type TrendKey = 'login' | 'create' | 'delete' | 'update'
 type TrendRange = '24h' | '7d' | '1m' | '6m' | 'custom'
@@ -22,12 +22,20 @@ const { data: logs } = await useFetch<OperationLog[]>('/api/admin/logs', {
 })
 
 const { data: roleStats } = await useFetch<{ count: number }>('/api/metrics/roles-count', {
-  default: () => ({ count: 0 })
+  default: () => ({ count: 0 }),
+  immediate: isAdmin.value
+})
+
+const { data: studentStats } = await useFetch<{ myTableCount: number, classStudentCount: number }>('/api/metrics/student-dashboard', {
+  default: () => ({ myTableCount: 0, classStudentCount: 0 }),
+  immediate: isStudent.value
 })
 
 const classCount = computed(() => new Set(data.value.map(item => item.className)).size)
 const roleCount = computed(() => roleStats.value.count)
 const tableCount = computed(() => isAdmin.value ? tables.value.length : 0)
+const myTableCount = computed(() => studentStats.value.myTableCount)
+const classStudentCount = computed(() => studentStats.value.classStudentCount)
 
 const trendRange = ref<TrendRange>('7d')
 const customRangeOpen = ref(false)
@@ -375,7 +383,39 @@ function updateTrendCustomEnd(value: unknown) {
 
     <template #body>
       <div class="space-y-6">
-        <UPageGrid class="lg:grid-cols-4 gap-4 sm:gap-6">
+        <UPageGrid v-if="isStudent" class="lg:grid-cols-2 gap-4 sm:gap-6">
+          <UPageCard
+            title="我的信息表数量"
+            icon="i-lucide-table-properties"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ myTableCount }}
+            </p>
+          </UPageCard>
+
+          <UPageCard
+            title="本班学生人数"
+            icon="i-lucide-users"
+            variant="subtle"
+            :ui="{
+              title: 'font-normal text-muted text-xs uppercase',
+              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
+            }"
+            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
+          >
+            <p class="text-2xl font-semibold text-highlighted">
+              {{ classStudentCount }}
+            </p>
+          </UPageCard>
+        </UPageGrid>
+
+        <UPageGrid v-else class="lg:grid-cols-4 gap-4 sm:gap-6">
           <UPageCard
             title="角色数量"
             icon="i-lucide-shield-user"
@@ -437,7 +477,7 @@ function updateTrendCustomEnd(value: unknown) {
           </UPageCard>
         </UPageGrid>
 
-        <UCard>
+        <UCard v-if="!isStudent">
           <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-3">

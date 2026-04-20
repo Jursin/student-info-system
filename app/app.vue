@@ -21,7 +21,7 @@ useHead({
 })
 
 const title = '学生信息管理系统'
-const description = '一个全栈学生信息管理系统，提供学生信息的增删改查功能，支持多用户登录和权限管理。'
+const description = '一个全栈学生信息管理系统网站，提供方便的学生信息管理功能，支持动态信息表和权限控制。'
 
 useSeoMeta({
   title,
@@ -37,7 +37,7 @@ if (!ready.value) {
 
 <template>
   <UApp :locale="zh_cn">
-    <NuxtLoadingIndicator />
+    <NuxtLoadingIndicator color="var(--ui-primary)" />
 
     <NuxtLayout>
       <NuxtPage />

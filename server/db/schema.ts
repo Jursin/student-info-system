@@ -47,7 +47,10 @@ export const dynamicTablesRelations = relations(dynamicTables, ({ many }) => ({
 
 export const dynamicFields = pgTable('dynamic_fields', {
   id: serial('id').primaryKey(),
-  tableId: text('table_id').notNull(),
+  tableId: text('table_id').references(() => dynamicTables.id, {
+    onDelete: 'cascade',
+    onUpdate: 'cascade'
+  }).notNull(),
   key: text('key').notNull(),
   label: text('label').notNull(),
   type: fieldTypeEnum('type').notNull(),
@@ -66,7 +69,10 @@ export const dynamicFieldsRelations = relations(dynamicFields, ({ one }) => ({
 
 export const dynamicTableRows = pgTable('dynamic_table_rows', {
   id: serial('id').primaryKey(),
-  tableId: text('table_id').notNull(),
+  tableId: text('table_id').references(() => dynamicTables.id, {
+    onDelete: 'cascade',
+    onUpdate: 'cascade'
+  }).notNull(),
   userId: text('user_id').notNull()
 }, table => [
   unique('dynamic_table_rows_table_id_user_id_unique').on(table.tableId, table.userId),
@@ -96,7 +102,10 @@ export const operationLogs = pgTable('operation_logs', {
 
 export const sessionTokens = pgTable('session_tokens', {
   token: text('token').primaryKey(),
-  userId: text('user_id').notNull(),
+  userId: text('user_id').references(() => userAccounts.userId, {
+    onDelete: 'cascade',
+    onUpdate: 'cascade'
+  }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
 }, table => [
