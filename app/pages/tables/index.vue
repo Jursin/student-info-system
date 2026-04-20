@@ -58,6 +58,9 @@ const isEditing = ref(false)
 const editingId = ref('')
 const deletingIds = ref<string[]>([])
 const submitting = ref(false)
+const deleteConfirmOpen = ref(false)
+const deleteConfirmLoading = ref(false)
+const deleteConfirmIds = ref<string[]>([])
 
 const designerState = reactive({
   tableName: '',
@@ -258,7 +261,7 @@ function getRowItems(row: Row<TableRow>) {
         label: '删除',
         icon: 'i-lucide-trash',
         color: 'error',
-        onSelect: () => removeTable(row.original.id)
+        onSelect: () => requestDeleteTable(row.original.id)
       })
     }
   }
@@ -431,7 +434,28 @@ async function submitTable() {
   }
 }
 
-async function removeTable(id: string, options: { reload?: boolean } = {}) {
+// 请求删除表 - 打开确认弹窗
+function requestDeleteTable(id: string) {
+  deleteConfirmIds.value = [id]
+  deleteConfirmOpen.value = true
+}
+
+// 请求批量删除表 - 打开确认弹窗
+function requestDeleteSelectedTables() {
+  const selectedRows = tableRef.value?.tableApi?.getFilteredSelectedRowModel().rows || []
+  const ids = selectedRows
+    .map(row => row.original.id)
+    .filter((id: string) => id !== BASIC_INFO_TABLE_ID)
+  if (!ids.length) {
+    return
+  }
+
+  deleteConfirmIds.value = ids
+  deleteConfirmOpen.value = true
+}
+
+// 执行删除表
+async function performDeleteTable(id: string) {
   if (!isAdmin.value) {
     return
   }
@@ -442,9 +466,6 @@ async function removeTable(id: string, options: { reload?: boolean } = {}) {
     toast.add({ title: `已删除表 ${id}` })
     await refresh()
     await refreshNuxtData('/api/tables')
-    if (options.reload !== false) {
-      window.location.reload()
-    }
   } catch (error: unknown) {
     const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
     toast.add({ color: 'error', title: '删除失败', description })
@@ -453,22 +474,30 @@ async function removeTable(id: string, options: { reload?: boolean } = {}) {
   }
 }
 
-async function removeSelectedTables() {
-  const selectedRows = tableRef.value?.tableApi?.getFilteredSelectedRowModel().rows || []
-  const ids = selectedRows
-    .map(row => row.original.id)
-    .filter((id: string) => id !== BASIC_INFO_TABLE_ID)
-  if (!ids.length) {
+// 执行删除多个表
+async function performDeleteTables(ids: string[]) {
+  if (!isAdmin.value) {
     return
   }
 
   for (const id of ids) {
-    await removeTable(id, { reload: false })
+    await performDeleteTable(id)
   }
 
   await refresh()
   await refreshNuxtData('/api/tables')
   window.location.reload()
+}
+
+// 确认删除 - 从弹窗中调用
+async function confirmDeleteTable() {
+  deleteConfirmLoading.value = true
+  try {
+    await performDeleteTables(deleteConfirmIds.value)
+    deleteConfirmOpen.value = false
+  } finally {
+    deleteConfirmLoading.value = false
+  }
 }
 
 onMounted(() => {
@@ -511,7 +540,7 @@ onBeforeUnmount(() => {
               color="error"
               variant="subtle"
               icon="i-lucide-trash"
-              @click="removeSelectedTables"
+              @click="requestDeleteSelectedTables"
             >
               批量删除
               <template #trailing>
@@ -717,6 +746,34 @@ onBeforeUnmount(() => {
               </UButton>
               <UButton type="submit" form="edit-table-form" :loading="submitting">
                 保存修改
+              </UButton>
+            </div>
+          </template>
+        </UModal>
+
+        <UModal v-model:open="deleteConfirmOpen" title="确认删除">
+          <template #body>
+            <p class="text-sm text-muted">
+              {{ deleteConfirmIds.length > 1 ? `即将删除 ${deleteConfirmIds.length} 个表，删除后不可恢复，是否继续？` : `即将删除表 ${deleteConfirmIds[0] || ''}，删除后不可恢复，是否继续？` }}
+            </p>
+          </template>
+
+          <template #footer>
+            <div class="flex justify-end gap-2 w-full">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                :disabled="deleteConfirmLoading"
+                @click="deleteConfirmOpen = false"
+              >
+                取消
+              </UButton>
+              <UButton
+                color="error"
+                :loading="deleteConfirmLoading"
+                @click="confirmDeleteTable"
+              >
+                确认
               </UButton>
             </div>
           </template>

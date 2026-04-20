@@ -31,11 +31,22 @@ export async function appendLog(params: {
 }
 
 export async function appendUserLog(
-  user: Pick<UserAccount, 'userId' | 'name'>,
+  user: Pick<UserAccount, 'userId' | 'name' | 'role'>,
   action: 'create' | 'read' | 'update' | 'delete' | 'login' | 'logout',
   target: string,
   detail: string
 ) {
+  const isPrivilegedLogin = action === 'login'
+    && ['admin', 'superAdmin', 'classLeader'].includes(user.role)
+
+  const isTableMutationByAdmin = ['create', 'update', 'delete'].includes(action)
+    && target === 'tables'
+    && ['admin', 'superAdmin'].includes(user.role)
+
+  if (!isPrivilegedLogin && !isTableMutationByAdmin) {
+    return
+  }
+
   await appendLog({
     operatorId: user.userId,
     operatorName: user.name,

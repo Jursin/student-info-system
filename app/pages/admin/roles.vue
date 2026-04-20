@@ -41,6 +41,9 @@ const creating = ref(false)
 const updating = ref(false)
 const resetting = ref(false)
 const deletingId = ref('')
+const deleteConfirmOpen = ref(false)
+const deleteConfirmLoading = ref(false)
+const deleteConfirmId = ref('')
 const keyword = ref('')
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 const columnFilters = ref([{ id: 'userId', value: '' }])
@@ -194,7 +197,7 @@ function getRowItems(row: RoleUser): DropdownMenuItem[] {
       label: '删除',
       icon: 'i-lucide-trash',
       color: 'error',
-      onSelect: () => removeUser(row.userId)
+      onSelect: () => requestDeleteUser(row.userId)
     })
   }
 
@@ -401,7 +404,14 @@ async function updateUser() {
   }
 }
 
-async function removeUser(id: string) {
+// 请求删除用户 - 打开确认弹窗
+function requestDeleteUser(id: string) {
+  deleteConfirmId.value = id
+  deleteConfirmOpen.value = true
+}
+
+// 执行删除用户
+async function performDeleteUser(id: string) {
   deletingId.value = id
   try {
     await $fetch(`/api/admin/roles/users/${id}`, {
@@ -415,6 +425,17 @@ async function removeUser(id: string) {
     toast.add({ color: 'error', title: '删除失败', description })
   } finally {
     deletingId.value = ''
+  }
+}
+
+// 确认删除 - 从弹窗中调用
+async function confirmDeleteUser() {
+  deleteConfirmLoading.value = true
+  try {
+    await performDeleteUser(deleteConfirmId.value)
+    deleteConfirmOpen.value = false
+  } finally {
+    deleteConfirmLoading.value = false
   }
 }
 
@@ -636,6 +657,34 @@ async function resetPassword() {
                   保存修改
                 </UButton>
               </div>
+            </div>
+          </template>
+        </UModal>
+
+        <UModal v-model:open="deleteConfirmOpen" title="确认删除">
+          <template #body>
+            <p class="text-sm text-muted">
+              即将删除用户 {{ deleteConfirmId }}，删除后不可恢复，是否继续？
+            </p>
+          </template>
+
+          <template #footer>
+            <div class="flex justify-end gap-2 w-full">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                :disabled="deleteConfirmLoading"
+                @click="deleteConfirmOpen = false"
+              >
+                取消
+              </UButton>
+              <UButton
+                color="error"
+                :loading="deleteConfirmLoading"
+                @click="confirmDeleteUser"
+              >
+                确认
+              </UButton>
             </div>
           </template>
         </UModal>

@@ -595,6 +595,30 @@ export async function listOperationLogs(params?: {
     orderBy: { timestamp: 'desc' }
   })
 
+  const operatorIds = [...new Set(logs.map(log => log.operatorId))]
+  const operators = operatorIds.length
+    ? await prisma.userAccount.findMany({
+        where: { userId: { in: operatorIds } },
+        select: { userId: true, role: true }
+      })
+    : []
+  const operatorRoleMap = new Map(operators.map(item => [item.userId, item.role]))
+
+  const allowedLogs = logs.filter((log) => {
+    const role = operatorRoleMap.get(log.operatorId)
+    if (!role) {
+      return false
+    }
+
+    const isPrivilegedLogin = log.action === 'login'
+      && (role === 'admin' || role === 'superAdmin' || role === 'classLeader')
+    const isTableMutationByAdmin = (log.action === 'create' || log.action === 'update' || log.action === 'delete')
+      && log.target === 'tables'
+      && (role === 'admin' || role === 'superAdmin')
+
+    return isPrivilegedLogin || isTableMutationByAdmin
+  })
+
   const keyword = params?.keyword?.trim().toLowerCase()
   const actionLabelMap: Record<OperationLog['action'], string> = {
     login: '登录',
@@ -606,14 +630,14 @@ export async function listOperationLogs(params?: {
   }
 
   const filteredLogs = keyword
-    ? logs.filter(log => [
+    ? allowedLogs.filter(log => [
         log.operatorName,
         log.target,
         log.detail,
         log.action,
         actionLabelMap[log.action]
       ].some(value => String(value).toLowerCase().includes(keyword)))
-    : logs
+    : allowedLogs
 
   return filteredLogs.map(log => ({
     id: log.id,

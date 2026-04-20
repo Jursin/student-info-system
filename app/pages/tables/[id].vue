@@ -37,6 +37,10 @@ const submitting = ref(false)
 const deletingIds = ref<string[]>([])
 const editingUserId = ref('')
 const formState = ref<Record<string, string>>({})
+const actionConfirmOpen = ref(false)
+const actionConfirmLoading = ref(false)
+const actionConfirmType = ref<'delete' | 'reset'>('delete')
+const actionConfirmIds = ref<string[]>([])
 
 const tableId = computed(() => route.params.id as string)
 type TableDetailResponse = { table: DynamicTable, rows: Record<string, string>[] }
@@ -125,6 +129,21 @@ const filteredRows = computed(() => {
 
 const isBasicInfoTable = computed(() => tableId.value === 'basic-info')
 const tableTypeLabel = computed(() => tableData.value.table.type === 'full' ? '全员表' : '部分表')
+const selectedCount = computed(() => table.value?.tableApi?.getFilteredSelectedRowModel().rows.length || 0)
+
+const actionConfirmTitle = computed(() => actionConfirmType.value === 'delete' ? '确认删除' : '确认重置密码')
+const actionConfirmDescription = computed(() => {
+  const count = actionConfirmIds.value.length
+  if (actionConfirmType.value === 'delete') {
+    return count > 1
+      ? `即将删除 ${count} 名学生，删除后不可恢复，是否继续？`
+      : `即将删除学生 ${actionConfirmIds.value[0] || ''}，删除后不可恢复，是否继续？`
+  }
+
+  return count > 1
+    ? `即将重置 ${count} 名学生的密码为默认值 Stu1234567，是否继续？`
+    : `即将重置学生 ${actionConfirmIds.value[0] || ''} 的密码为默认值 Stu1234567，是否继续？`
+})
 
 function createEmptyFormState() {
   return Object.fromEntries(tableData.value.table.fields.map(field => [field.key, '']))
@@ -246,17 +265,64 @@ async function updateRow() {
   }
 }
 
-async function resetPassword() {
-  if (!isAdmin.value || !editingUserId.value || !isBasicInfoTable.value) {
+function openActionConfirm(type: 'delete' | 'reset', ids: string[]) {
+  if (!ids.length) {
+    return
+  }
+
+  actionConfirmType.value = type
+  actionConfirmIds.value = ids
+  actionConfirmOpen.value = true
+}
+
+async function performDeleteRows(ids: string[]) {
+  if (!isAdmin.value || !ids.length) {
     return
   }
 
   submitting.value = true
   try {
-    await $fetch(`/api/students/${editingUserId.value}/password`, {
-      method: 'PUT'
-    })
-    toast.add({ title: '密码已重置为默认值 Stu1234567' })
+    for (const id of ids) {
+      deletingIds.value.push(id)
+      await $fetch(`/api/students/${id}`, { method: 'DELETE' })
+      deletingIds.value = deletingIds.value.filter(item => item !== id)
+    }
+
+    if (ids.length > 1) {
+      toast.add({ title: `已批量删除 ${ids.length} 名学生` })
+    } else {
+      toast.add({ title: `已删除 ${ids[0] || ''}` })
+    }
+
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    toast.add({ color: 'error', title: '删除失败', description })
+  } finally {
+    deletingIds.value = []
+    submitting.value = false
+  }
+}
+
+async function performResetPasswords(ids: string[]) {
+  if (!isAdmin.value || !isBasicInfoTable.value || !ids.length) {
+    return
+  }
+
+  submitting.value = true
+  try {
+    for (const id of ids) {
+      await $fetch(`/api/students/${id}/password`, {
+        method: 'PUT'
+      })
+    }
+
+    if (ids.length > 1) {
+      toast.add({ title: `已批量重置 ${ids.length} 名学生密码为默认值 Stu1234567` })
+    } else {
+      toast.add({ title: `已重置 ${ids[0] || ''} 的密码为默认值 Stu1234567` })
+    }
+
     editOpen.value = false
     await refresh()
   } catch (error: unknown) {
@@ -267,33 +333,78 @@ async function resetPassword() {
   }
 }
 
-async function deleteRow(userId: string) {
+function requestDeleteRows(ids: string[]) {
   if (!isAdmin.value) {
     return
   }
 
-  deletingIds.value.push(userId)
-  try {
-    await $fetch(`/api/students/${userId}`, { method: 'DELETE' })
-    toast.add({ title: `已删除 ${userId}` })
-    await refresh()
-  } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
-    toast.add({ color: 'error', title: '删除失败', description })
-  } finally {
-    deletingIds.value = deletingIds.value.filter(id => id !== userId)
-  }
+  openActionConfirm('delete', ids)
 }
 
-async function deleteSelectedRows() {
+function requestDeleteSelectedRows() {
   const selectedRows = table.value?.tableApi?.getFilteredSelectedRowModel().rows || []
   const ids = selectedRows
     .map(row => row.original.userId)
     .filter((id): id is string => Boolean(id))
 
-  for (const id of ids) {
-    await deleteRow(id)
+  requestDeleteRows(ids)
+}
+
+function requestResetPassword() {
+  if (!isAdmin.value || !editingUserId.value || !isBasicInfoTable.value) {
+    return
   }
+
+  openActionConfirm('reset', [editingUserId.value])
+}
+
+function requestResetSelectedPasswords() {
+  if (!isAdmin.value || !isBasicInfoTable.value) {
+    return
+  }
+
+  const selectedRows = table.value?.tableApi?.getFilteredSelectedRowModel().rows || []
+  const ids = selectedRows
+    .map(row => row.original.userId)
+    .filter((id): id is string => Boolean(id))
+
+  openActionConfirm('reset', ids)
+}
+
+async function confirmAction() {
+  if (!actionConfirmIds.value.length) {
+    actionConfirmOpen.value = false
+    return
+  }
+
+  actionConfirmLoading.value = true
+  try {
+    if (actionConfirmType.value === 'delete') {
+      await performDeleteRows(actionConfirmIds.value)
+    } else {
+      await performResetPasswords(actionConfirmIds.value)
+    }
+
+    actionConfirmOpen.value = false
+  } finally {
+    actionConfirmLoading.value = false
+  }
+}
+
+async function deleteRow(userId: string) {
+  requestDeleteRows([userId])
+}
+
+async function deleteSelectedRows() {
+  requestDeleteSelectedRows()
+}
+
+async function resetPassword() {
+  requestResetPassword()
+}
+
+async function resetSelectedPasswords() {
+  requestResetSelectedPasswords()
 }
 
 function getRowItems(row: Row<RowRecord>) {
@@ -426,7 +537,7 @@ onBeforeUnmount(() => {
             </UBadge>
 
             <UButton
-              v-if="isAdmin && (table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0) > 0"
+              v-if="isAdmin && selectedCount > 0"
               color="error"
               variant="subtle"
               icon="i-lucide-trash"
@@ -435,7 +546,23 @@ onBeforeUnmount(() => {
               删除
               <template #trailing>
                 <UKbd>
-                  {{ table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }}
+                  {{ selectedCount }}
+                </UKbd>
+              </template>
+            </UButton>
+
+            <UButton
+              v-if="isAdmin && isBasicInfoTable && selectedCount > 0"
+              color="primary"
+              variant="subtle"
+              icon="i-lucide-key-round"
+              :loading="submitting"
+              @click="resetSelectedPasswords"
+            >
+              批量重置密码
+              <template #trailing>
+                <UKbd>
+                  {{ selectedCount }}
                 </UKbd>
               </template>
             </UButton>
@@ -520,9 +647,18 @@ onBeforeUnmount(() => {
                   @update:model-value="value => formState[field.key] = fromDateValue(value as { year: number, month: number, day: number } | null)"
                 />
                 <UInput
+                  v-else-if="field.type === 'number'"
+                  :model-value="formState[field.key]"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  :disabled="isFieldReadonlyInEdit(field.key)"
+                  class="w-full"
+                  @update:model-value="value => formState[field.key] = String(value ?? '').replace(/\D+/g, '')"
+                />
+                <UInput
                   v-else
                   v-model="formState[field.key]"
-                  :type="field.type === 'number' ? 'number' : 'text'"
+                  type="text"
                   :disabled="isFieldReadonlyInEdit(field.key)"
                   class="w-full"
                 />
@@ -551,6 +687,34 @@ onBeforeUnmount(() => {
                   保存修改
                 </UButton>
               </div>
+            </div>
+          </template>
+        </UModal>
+
+        <UModal v-model:open="actionConfirmOpen" :title="actionConfirmTitle">
+          <template #body>
+            <p class="text-sm text-muted">
+              {{ actionConfirmDescription }}
+            </p>
+          </template>
+
+          <template #footer>
+            <div class="flex justify-end gap-2 w-full">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                :disabled="actionConfirmLoading"
+                @click="actionConfirmOpen = false"
+              >
+                取消
+              </UButton>
+              <UButton
+                :color="actionConfirmType === 'delete' ? 'error' : 'primary'"
+                :loading="actionConfirmLoading"
+                @click="confirmAction"
+              >
+                确认
+              </UButton>
             </div>
           </template>
         </UModal>

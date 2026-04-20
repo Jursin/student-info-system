@@ -24,7 +24,11 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      include: ['zod']
+      include: [
+        'zod',
+        '@vueuse/integrations/useSortable',
+        '@internationalized/date'
+      ]
     }
   },
 
