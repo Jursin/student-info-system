@@ -72,7 +72,7 @@ const seedUsers: Array<{
   {
     userId: 'superadmin',
     name: '超级管理员',
-    className: '管理组',
+    className: '',
     role: 'superAdmin',
     password: 'SuAdmin123'
   }

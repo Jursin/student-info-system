@@ -21,15 +21,13 @@ useHead({
 })
 
 const title = '学生信息管理系统'
-const description = '面向学生、班委、管理员与超级管理员的学生信息管理平台，支持一次录入、多方复用和细粒度权限控制。'
+const description = '一个全栈学生信息管理系统，提供学生信息的增删改查功能，支持多用户登录和权限管理。'
 
 useSeoMeta({
   title,
   description,
   ogTitle: title,
-  ogDescription: description,
-  ogImage: 'https://ui.nuxt.com/assets/templates/nuxt/dashboard-light.png',
-  twitterCard: 'summary_large_image'
+  ogDescription: description
 })
 
 if (!ready.value) {
