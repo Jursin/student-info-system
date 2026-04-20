@@ -1,5 +1,7 @@
 import { hashPassword } from './security'
-import { prisma } from './prisma'
+import { db } from './drizzle'
+import * as schema from '../db/schema'
+import { eq, and, ilike, not, inArray, desc, asc, count as drizzleCount, gte, lte } from 'drizzle-orm'
 
 export type UserRole = 'student' | 'classLeader' | 'admin' | 'superAdmin'
 export type TableType = 'full' | 'partial'
@@ -96,10 +98,6 @@ function toUserRole(role: string): UserRole {
   return role as UserRole
 }
 
-function toOperationAction(action: string): OperationLog['action'] {
-  return action as OperationLog['action']
-}
-
 function toTableType(type: string): TableType {
   return type as TableType
 }
@@ -126,48 +124,49 @@ export async function ensureSeedData(): Promise<void> {
   }
 
   seedPromise = (async () => {
-    const count = await prisma.userAccount.count()
+    const [row] = await db.select({ count: drizzleCount() }).from(schema.userAccounts)
+    const count = Number(row?.count || 0)
     if (count > 0) {
       return
     }
 
-    await prisma.$transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       for (const user of seedUsers) {
-        await tx.userAccount.create({
-          data: {
-            userId: user.userId,
-            name: user.name,
-            className: user.className,
-            role: user.role,
-            passwordHash: hashPassword(user.password),
-            failedAttempts: 0,
-            lockUntil: null
-          }
+        await tx.insert(schema.userAccounts).values({
+          userId: user.userId,
+          name: user.name,
+          className: user.className,
+          role: user.role,
+          passwordHash: hashPassword(user.password),
+          failedAttempts: 0,
+          lockUntil: null
         })
       }
 
       for (const profile of seedProfiles) {
-        await tx.studentProfile.create({ data: profile })
+        await tx.insert(schema.studentProfiles).values(profile)
       }
 
       for (const table of seedTables) {
-        await tx.dynamicTable.create({
-          data: {
-            id: table.id,
-            name: table.name,
-            createdBy: table.createdBy,
-            type: table.type,
-            fields: {
-              create: table.fields.map(field => ({
-                key: field.key,
-                label: field.label,
-                type: field.type,
-                limit: field.limit,
-                options: field.options
-              }))
-            }
-          }
+        await tx.insert(schema.dynamicTables).values({
+          id: table.id,
+          name: table.name,
+          createdBy: table.createdBy,
+          type: table.type
         })
+
+        if (table.fields.length > 0) {
+          await tx.insert(schema.dynamicFields).values(
+            table.fields.map(field => ({
+              tableId: table.id,
+              key: field.key,
+              label: field.label,
+              type: field.type,
+              limit: field.limit,
+              options: field.options
+            }))
+          )
+        }
       }
     })
   })()
@@ -178,7 +177,7 @@ export async function ensureSeedData(): Promise<void> {
 export async function findUserByUserId(userId: string): Promise<UserAccount | null> {
   await ensureSeedData()
 
-  const user = await prisma.userAccount.findUnique({ where: { userId } })
+  const [user] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, userId))
   if (!user) {
     return null
   }
@@ -202,14 +201,16 @@ export async function updateUserAuthState(params: {
 }): Promise<void> {
   await ensureSeedData()
 
-  await prisma.userAccount.update({
-    where: { userId: params.userId },
-    data: {
-      ...(params.failedAttempts === undefined ? {} : { failedAttempts: params.failedAttempts }),
-      ...(params.lockUntil === undefined ? {} : { lockUntil: params.lockUntil }),
-      ...(params.passwordHash === undefined ? {} : { passwordHash: params.passwordHash })
-    }
-  })
+  const data: Partial<typeof schema.userAccounts.$inferInsert> = {}
+  if (params.failedAttempts !== undefined) data.failedAttempts = params.failedAttempts
+  if (params.lockUntil !== undefined) data.lockUntil = params.lockUntil
+  if (params.passwordHash !== undefined) data.passwordHash = params.passwordHash
+
+  if (Object.keys(data).length > 0) {
+    await db.update(schema.userAccounts)
+      .set(data)
+      .where(eq(schema.userAccounts.userId, params.userId))
+  }
 }
 
 export async function upsertSessionToken(params: {
@@ -219,58 +220,66 @@ export async function upsertSessionToken(params: {
 }): Promise<void> {
   await ensureSeedData()
 
-  await prisma.sessionToken.upsert({
-    where: { token: params.token },
-    update: {
-      userId: params.userId,
-      expiresAt: params.expiresAt
-    },
-    create: {
+  await db.insert(schema.sessionTokens)
+    .values({
       token: params.token,
       userId: params.userId,
       expiresAt: params.expiresAt
-    }
-  })
+    })
+    .onConflictDoUpdate({
+      target: schema.sessionTokens.token,
+      set: {
+        userId: params.userId,
+        expiresAt: params.expiresAt
+      }
+    })
 }
 
 export async function deleteSessionToken(token: string): Promise<void> {
   await ensureSeedData()
 
-  await prisma.sessionToken.deleteMany({ where: { token } })
+  await db.delete(schema.sessionTokens).where(eq(schema.sessionTokens.token, token))
 }
 
 export async function findSessionUserByToken(token: string): Promise<UserAccount | null> {
   await ensureSeedData()
 
-  const session = await prisma.sessionToken.findUnique({
-    where: { token },
-    include: { user: true }
+  const row = await db.select({
+    session: schema.sessionTokens,
+    user: schema.userAccounts
   })
+    .from(schema.sessionTokens)
+    .innerJoin(schema.userAccounts, eq(schema.sessionTokens.userId, schema.userAccounts.userId))
+    .where(eq(schema.sessionTokens.token, token))
+    .limit(1)
+    .then(res => res[0])
 
-  if (!session) {
+  if (!row) {
     return null
   }
 
+  const { session, user } = row
+
   if (session.expiresAt.getTime() <= Date.now()) {
-    await prisma.sessionToken.deleteMany({ where: { token } })
+    await db.delete(schema.sessionTokens).where(eq(schema.sessionTokens.token, token))
     return null
   }
 
   return {
-    userId: session.user.userId,
-    name: session.user.name,
-    className: session.user.className,
-    role: toUserRole(session.user.role),
-    passwordHash: session.user.passwordHash,
-    failedAttempts: session.user.failedAttempts,
-    lockUntil: session.user.lockUntil
+    userId: user.userId,
+    name: user.name,
+    className: user.className,
+    role: toUserRole(user.role),
+    passwordHash: user.passwordHash,
+    failedAttempts: user.failedAttempts,
+    lockUntil: user.lockUntil
   }
 }
 
 export async function getStudentProfileByUserId(userId: string): Promise<StudentProfile | null> {
   await ensureSeedData()
 
-  const profile = await prisma.studentProfile.findUnique({ where: { userId } })
+  const [profile] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
   if (!profile) {
     return null
   }
@@ -284,35 +293,33 @@ export async function listStudentProfiles(params?: {
 }): Promise<StudentProfile[]> {
   await ensureSeedData()
 
-  return prisma.studentProfile.findMany({
-    where: {
-      ...(params?.userId ? { userId: params.userId } : {}),
-      ...(params?.className ? { className: params.className } : {})
-    },
-    orderBy: { userId: 'asc' }
-  })
+  const filters = []
+  if (params?.userId) filters.push(eq(schema.studentProfiles.userId, params.userId))
+  if (params?.className) filters.push(eq(schema.studentProfiles.className, params.className))
+
+  return db.select()
+    .from(schema.studentProfiles)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+    .orderBy(asc(schema.studentProfiles.userId))
 }
 
 export async function createStudentProfile(profile: StudentProfile): Promise<StudentProfile> {
   await ensureSeedData()
 
-  return prisma.$transaction(async (tx) => {
-    const createdProfile = await tx.studentProfile.create({
-      data: profile
-    })
+  return db.transaction(async (tx) => {
+    const [createdProfile] = await tx.insert(schema.studentProfiles).values(profile).returning()
+    if (!createdProfile) throw new Error('Failed to create student profile')
 
-    const account = await tx.userAccount.findUnique({ where: { userId: profile.userId } })
+    const [account] = await tx.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, profile.userId))
     if (!account) {
-      await tx.userAccount.create({
-        data: {
-          userId: profile.userId,
-          name: profile.name,
-          className: profile.className,
-          role: 'student',
-          passwordHash: profile.passwordHash,
-          failedAttempts: 0,
-          lockUntil: null
-        }
+      await tx.insert(schema.userAccounts).values({
+        userId: profile.userId,
+        name: profile.name,
+        className: profile.className,
+        role: 'student',
+        passwordHash: profile.passwordHash,
+        failedAttempts: 0,
+        lockUntil: null
       })
     }
 
@@ -323,7 +330,7 @@ export async function createStudentProfile(profile: StudentProfile): Promise<Stu
 export async function ensureStudentAccountByUserId(userId: string): Promise<UserAccount | null> {
   await ensureSeedData()
 
-  const exists = await prisma.userAccount.findUnique({ where: { userId } })
+  const [exists] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, userId))
   if (exists) {
     return {
       userId: exists.userId,
@@ -336,22 +343,22 @@ export async function ensureStudentAccountByUserId(userId: string): Promise<User
     }
   }
 
-  const profile = await prisma.studentProfile.findUnique({ where: { userId } })
+  const [profile] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
   if (!profile) {
     return null
   }
 
-  const created = await prisma.userAccount.create({
-    data: {
-      userId: profile.userId,
-      name: profile.name,
-      className: profile.className,
-      role: 'student',
-      passwordHash: profile.passwordHash,
-      failedAttempts: 0,
-      lockUntil: null
-    }
-  })
+  const [created] = await db.insert(schema.userAccounts).values({
+    userId: profile.userId,
+    name: profile.name,
+    className: profile.className,
+    role: 'student',
+    passwordHash: profile.passwordHash,
+    failedAttempts: 0,
+    lockUntil: null
+  }).returning()
+
+  if (!created) throw new Error('Failed to create user account')
 
   return {
     userId: created.userId,
@@ -367,59 +374,64 @@ export async function ensureStudentAccountByUserId(userId: string): Promise<User
 export async function updateStudentProfile(userId: string, body: Partial<StudentProfile>): Promise<StudentProfile | null> {
   await ensureSeedData()
 
-  const exists = await prisma.studentProfile.findUnique({ where: { userId } })
+  const [exists] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
   if (!exists) {
     return null
   }
 
-  return prisma.studentProfile.update({
-    where: { userId },
-    data: {
-      ...(body.gender === undefined ? {} : { gender: body.gender }),
-      ...(body.birthDate === undefined ? {} : { birthDate: body.birthDate }),
-      ...(body.phone === undefined ? {} : { phone: body.phone }),
-      ...(body.address === undefined ? {} : { address: body.address }),
-      ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }),
-      ...(body.major === undefined ? {} : { major: body.major }),
-      ...(body.passwordHash === undefined ? {} : { passwordHash: body.passwordHash })
-    }
-  })
+  const data: Partial<typeof schema.studentProfiles.$inferInsert> = {}
+  if (body.gender !== undefined) data.gender = body.gender
+  if (body.birthDate !== undefined) data.birthDate = body.birthDate
+  if (body.phone !== undefined) data.phone = body.phone
+  if (body.address !== undefined) data.address = body.address
+  if (body.guardianPhone !== undefined) data.guardianPhone = body.guardianPhone
+  if (body.major !== undefined) data.major = body.major
+  if (body.passwordHash !== undefined) data.passwordHash = body.passwordHash
+
+  const [updated] = await db.update(schema.studentProfiles)
+    .set(data)
+    .where(eq(schema.studentProfiles.userId, userId))
+    .returning()
+
+  return updated || null
 }
 
 export async function deleteStudentProfile(userId: string): Promise<boolean> {
   await ensureSeedData()
 
-  const result = await prisma.$transaction(async (tx) => {
-    await tx.dynamicTableRow.deleteMany({ where: { userId } })
-    return tx.studentProfile.deleteMany({ where: { userId } })
+  const result = await db.transaction(async (tx) => {
+    await tx.delete(schema.dynamicTableRows).where(eq(schema.dynamicTableRows.userId, userId))
+    const res = await tx.delete(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
+    return res.rowCount ?? 0
   })
 
-  return result.count > 0
+  return result > 0
 }
 
 export async function clearStudentProfiles(): Promise<void> {
   await ensureSeedData()
-  await prisma.studentProfile.deleteMany({})
+  await db.delete(schema.studentProfiles)
 }
 
 export async function listDynamicTables(): Promise<DynamicTable[]> {
   await ensureSeedData()
 
-  const tables = await prisma.dynamicTable.findMany({
-    include: {
-      fields: {
-        orderBy: { id: 'asc' }
-      }
-    },
-    orderBy: { id: 'asc' }
-  })
+  const tables = await db.select().from(schema.dynamicTables).orderBy(asc(schema.dynamicTables.id))
+  const allFields = await db.select().from(schema.dynamicFields).orderBy(asc(schema.dynamicFields.id))
+
+  const fieldsByTableId = allFields.reduce((acc, field) => {
+    const list = acc[field.tableId] || []
+    list.push(field)
+    acc[field.tableId] = list
+    return acc
+  }, {} as Record<string, (typeof allFields)[number][]>)
 
   return tables.map(table => ({
     id: table.id,
     name: table.name,
     createdBy: table.createdBy,
     type: toTableType(table.type),
-    fields: table.fields.map(field => ({
+    fields: (fieldsByTableId[table.id] || []).map(field => ({
       key: normalizeDynamicFieldKeyFromDb(field.key),
       label: field.label,
       type: field.type as DynamicField['type'],
@@ -438,21 +450,25 @@ export async function createDynamicTable(params: {
 }): Promise<void> {
   await ensureSeedData()
 
-  await prisma.dynamicTable.create({
-    data: {
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.dynamicTables).values({
       id: params.id,
       name: params.name,
       createdBy: params.createdBy,
-      type: params.type,
-      fields: {
-        create: params.fields.map(field => ({
+      type: params.type
+    })
+
+    if (params.fields.length > 0) {
+      await tx.insert(schema.dynamicFields).values(
+        params.fields.map(field => ({
+          tableId: params.id,
           key: normalizeDynamicFieldKeyToDb(field.key),
           label: field.label,
           type: field.type,
           limit: field.limit,
           options: field.options
         }))
-      }
+      )
     }
   })
 }
@@ -460,21 +476,21 @@ export async function createDynamicTable(params: {
 export async function findDynamicTableById(id: string): Promise<DynamicTable | null> {
   await ensureSeedData()
 
-  const table = await prisma.dynamicTable.findUnique({
-    where: { id },
-    include: { fields: { orderBy: { id: 'asc' } } }
-  })
-
+  const [table] = await db.select().from(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
   if (!table) {
     return null
   }
+
+  const fields = await db.select().from(schema.dynamicFields)
+    .where(eq(schema.dynamicFields.tableId, id))
+    .orderBy(asc(schema.dynamicFields.id))
 
   return {
     id: table.id,
     name: table.name,
     createdBy: table.createdBy,
     type: toTableType(table.type),
-    fields: table.fields.map(field => ({
+    fields: fields.map(field => ({
       key: normalizeDynamicFieldKeyFromDb(field.key),
       label: field.label,
       type: field.type as DynamicField['type'],
@@ -491,30 +507,34 @@ export async function updateDynamicTableById(id: string, params: {
 }): Promise<DynamicTable | null> {
   await ensureSeedData()
 
-  const exists = await prisma.dynamicTable.findUnique({ where: { id } })
+  const [exists] = await db.select().from(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
   if (!exists) {
     return null
   }
 
-  await prisma.dynamicTable.update({
-    where: { id },
-    data: {
-      ...(params.name === undefined ? {} : { name: params.name }),
-      ...(params.type === undefined ? {} : { type: params.type }),
-      ...(params.fields === undefined
-        ? {}
-        : {
-            fields: {
-              deleteMany: {},
-              create: params.fields.map(field => ({
-                key: normalizeDynamicFieldKeyToDb(field.key),
-                label: field.label,
-                type: field.type,
-                limit: field.limit,
-                options: field.options
-              }))
-            }
-          })
+  await db.transaction(async (tx) => {
+    const data: Partial<typeof schema.dynamicTables.$inferInsert> = {}
+    if (params.name !== undefined) data.name = params.name
+    if (params.type !== undefined) data.type = params.type
+
+    if (Object.keys(data).length > 0) {
+      await tx.update(schema.dynamicTables).set(data).where(eq(schema.dynamicTables.id, id))
+    }
+
+    if (params.fields !== undefined) {
+      await tx.delete(schema.dynamicFields).where(eq(schema.dynamicFields.tableId, id))
+      if (params.fields.length > 0) {
+        await tx.insert(schema.dynamicFields).values(
+          params.fields.map(field => ({
+            tableId: id,
+            key: normalizeDynamicFieldKeyToDb(field.key),
+            label: field.label,
+            type: field.type,
+            limit: field.limit,
+            options: field.options
+          }))
+        )
+      }
     }
   })
 
@@ -524,18 +544,17 @@ export async function updateDynamicTableById(id: string, params: {
 export async function deleteDynamicTableById(id: string): Promise<boolean> {
   await ensureSeedData()
 
-  const result = await prisma.dynamicTable.deleteMany({ where: { id } })
-  return result.count > 0
+  const result = await db.delete(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
+  return (result.rowCount ?? 0) > 0
 }
 
 export async function listDynamicTableUserIds(tableId: string): Promise<string[]> {
   await ensureSeedData()
 
-  const rows = await prisma.dynamicTableRow.findMany({
-    where: { tableId },
-    select: { userId: true },
-    orderBy: { id: 'asc' }
-  })
+  const rows = await db.select({ userId: schema.dynamicTableRows.userId })
+    .from(schema.dynamicTableRows)
+    .where(eq(schema.dynamicTableRows.tableId, tableId))
+    .orderBy(asc(schema.dynamicTableRows.id))
 
   return rows.map(row => row.userId)
 }
@@ -543,19 +562,14 @@ export async function listDynamicTableUserIds(tableId: string): Promise<string[]
 export async function addStudentToDynamicTable(tableId: string, userId: string): Promise<void> {
   await ensureSeedData()
 
-  await prisma.dynamicTableRow.upsert({
-    where: {
-      tableId_userId: {
-        tableId,
-        userId
-      }
-    },
-    update: {},
-    create: {
+  await db.insert(schema.dynamicTableRows)
+    .values({
       tableId,
       userId
-    }
-  })
+    })
+    .onConflictDoNothing({
+      target: [schema.dynamicTableRows.tableId, schema.dynamicTableRows.userId]
+    })
 }
 
 export async function createOperationLog(params: {
@@ -567,14 +581,12 @@ export async function createOperationLog(params: {
 }): Promise<void> {
   await ensureSeedData()
 
-  await prisma.operationLog.create({
-    data: {
-      operatorId: params.operatorId,
-      operatorName: params.operatorName,
-      action: params.action,
-      target: params.target,
-      detail: params.detail
-    }
+  await db.insert(schema.operationLogs).values({
+    operatorId: params.operatorId,
+    operatorName: params.operatorName,
+    action: params.action,
+    target: params.target,
+    detail: params.detail
   })
 }
 
@@ -586,21 +598,21 @@ export async function listOperationLogs(params?: {
 }): Promise<OperationLog[]> {
   await ensureSeedData()
 
-  const logs = await prisma.operationLog.findMany({
-    where: {
-      ...(params?.action ? { action: params.action as OperationLog['action'] } : {}),
-      ...(params?.target ? { target: { contains: params.target } } : {}),
-      ...(!params?.includeRead ? { action: { not: 'read' } } : {})
-    },
-    orderBy: { timestamp: 'desc' }
-  })
+  const filters = []
+  if (params?.action) filters.push(eq(schema.operationLogs.action, params.action as typeof schema.operationActionEnum.enumValues[number]))
+  if (params?.target) filters.push(ilike(schema.operationLogs.target, `%${params.target}%`))
+  if (!params?.includeRead) filters.push(not(eq(schema.operationLogs.action, 'read')))
+
+  const logs = await db.select()
+    .from(schema.operationLogs)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+    .orderBy(desc(schema.operationLogs.timestamp))
 
   const operatorIds = [...new Set(logs.map(log => log.operatorId))]
   const operators = operatorIds.length
-    ? await prisma.userAccount.findMany({
-        where: { userId: { in: operatorIds } },
-        select: { userId: true, role: true }
-      })
+    ? await db.select({ userId: schema.userAccounts.userId, role: schema.userAccounts.role })
+        .from(schema.userAccounts)
+        .where(inArray(schema.userAccounts.userId, operatorIds))
     : []
   const operatorRoleMap = new Map(operators.map(item => [item.userId, item.role]))
 
@@ -650,26 +662,24 @@ export async function listOperationLogs(params?: {
   }))
 }
 
+function toOperationAction(action: string): OperationLog['action'] {
+  return action as OperationLog['action']
+}
+
 export async function clearOperationLogs(params?: {
   startAt?: Date
   endAt?: Date
 }): Promise<number> {
   await ensureSeedData()
 
-  const result = await prisma.operationLog.deleteMany({
-    where: {
-      ...(params?.startAt || params?.endAt
-        ? {
-            timestamp: {
-              ...(params?.startAt ? { gte: params.startAt } : {}),
-              ...(params?.endAt ? { lte: params.endAt } : {})
-            }
-          }
-        : {})
-    }
-  })
+  const filters = []
+  if (params?.startAt) filters.push(gte(schema.operationLogs.timestamp, params.startAt))
+  if (params?.endAt) filters.push(lte(schema.operationLogs.timestamp, params.endAt))
 
-  return result.count
+  const result = await db.delete(schema.operationLogs)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+
+  return result.rowCount ?? 0
 }
 
 export async function listUserAccounts(params?: {
@@ -677,16 +687,13 @@ export async function listUserAccounts(params?: {
 }): Promise<UserAccount[]> {
   await ensureSeedData()
 
-  const users = await prisma.userAccount.findMany({
-    where: params?.roles?.length
-      ? {
-          role: {
-            in: params.roles
-          }
-        }
-      : undefined,
-    orderBy: { userId: 'asc' }
-  })
+  const filters = []
+  if (params?.roles?.length) filters.push(inArray(schema.userAccounts.role, params.roles as (typeof schema.userRoleEnum.enumValues[number])[]))
+
+  const users = await db.select()
+    .from(schema.userAccounts)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+    .orderBy(asc(schema.userAccounts.userId))
 
   return users.map(user => ({
     userId: user.userId,
@@ -702,12 +709,7 @@ export async function listUserAccounts(params?: {
 export async function countDistinctUserRoles(): Promise<number> {
   await ensureSeedData()
 
-  const users = await prisma.userAccount.findMany({
-    select: {
-      role: true
-    }
-  })
-
+  const users = await db.select({ role: schema.userAccounts.role }).from(schema.userAccounts)
   return new Set(users.map(user => user.role)).size
 }
 
@@ -720,17 +722,17 @@ export async function createUserAccount(params: {
 }): Promise<UserAccount> {
   await ensureSeedData()
 
-  const created = await prisma.userAccount.create({
-    data: {
-      userId: params.userId,
-      name: params.name,
-      className: params.className,
-      role: params.role,
-      passwordHash: hashPassword(params.password),
-      failedAttempts: 0,
-      lockUntil: null
-    }
-  })
+  const [created] = await db.insert(schema.userAccounts).values({
+    userId: params.userId,
+    name: params.name,
+    className: params.className,
+    role: params.role,
+    passwordHash: hashPassword(params.password),
+    failedAttempts: 0,
+    lockUntil: null
+  }).returning()
+
+  if (!created) throw new Error('Failed to create user account')
 
   return {
     userId: created.userId,
@@ -752,42 +754,42 @@ export async function updateUserAccountByUserId(userId: string, params: {
 }): Promise<UserAccount | null> {
   await ensureSeedData()
 
-  const current = await prisma.userAccount.findUnique({ where: { userId } })
+  const [current] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, userId))
   if (!current) {
     return null
   }
 
   const nextUserId = params.nextUserId?.trim() || userId
   if (nextUserId !== userId) {
-    const exists = await prisma.userAccount.findUnique({ where: { userId: nextUserId } })
+    const [exists] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, nextUserId))
     if (exists) {
       throw createError({ statusCode: 400, message: '用户名或学号已存在' })
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.userAccount.update({
-      where: { userId },
-      data: {
-        userId: nextUserId,
-        ...(params.name === undefined ? {} : { name: params.name }),
-        ...(params.className === undefined ? {} : { className: params.className }),
-        ...(params.role === undefined ? {} : { role: params.role }),
-        ...(params.password === undefined ? {} : { passwordHash: hashPassword(params.password) }),
-        failedAttempts: 0,
-        lockUntil: null
-      }
-    })
+  await db.transaction(async (tx) => {
+    const data: Partial<typeof schema.userAccounts.$inferInsert> = {
+      userId: nextUserId,
+      failedAttempts: 0,
+      lockUntil: null
+    }
+    if (params.name !== undefined) data.name = params.name
+    if (params.className !== undefined) data.className = params.className
+    if (params.role !== undefined) data.role = params.role
+    if (params.password !== undefined) data.passwordHash = hashPassword(params.password)
+
+    await tx.update(schema.userAccounts)
+      .set(data)
+      .where(eq(schema.userAccounts.userId, userId))
 
     if (nextUserId !== userId) {
-      await tx.sessionToken.updateMany({
-        where: { userId },
-        data: { userId: nextUserId }
-      })
+      await tx.update(schema.sessionTokens)
+        .set({ userId: nextUserId })
+        .where(eq(schema.sessionTokens.userId, userId))
     }
   })
 
-  const updated = await prisma.userAccount.findUnique({ where: { userId: nextUserId } })
+  const [updated] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, nextUserId))
   if (!updated) {
     return null
   }
@@ -806,9 +808,13 @@ export async function updateUserAccountByUserId(userId: string, params: {
 export async function deleteUserAccountByUserId(userId: string): Promise<boolean> {
   await ensureSeedData()
 
-  const result = await prisma.userAccount.deleteMany({ where: { userId } })
-  await prisma.sessionToken.deleteMany({ where: { userId } })
-  return result.count > 0
+  const result = await db.transaction(async (tx) => {
+    await tx.delete(schema.sessionTokens).where(eq(schema.sessionTokens.userId, userId))
+    const res = await tx.delete(schema.userAccounts).where(eq(schema.userAccounts.userId, userId))
+    return res.rowCount ?? 0
+  })
+
+  return result > 0
 }
 
 export async function updateStudentRecord(userId: string, body: {
@@ -824,55 +830,57 @@ export async function updateStudentRecord(userId: string, body: {
 }): Promise<StudentProfile | null> {
   await ensureSeedData()
 
-  const profile = await prisma.studentProfile.findUnique({ where: { userId } })
+  const [profile] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
   if (!profile) {
     return null
   }
 
-  const account = await prisma.userAccount.findUnique({ where: { userId } })
+  const [account] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, userId))
   const targetUserId = body.nextUserId?.trim() || userId
 
   if (targetUserId !== userId) {
-    const exists = await prisma.studentProfile.findUnique({ where: { userId: targetUserId } })
+    const [exists] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, targetUserId))
     if (exists) {
       throw createError({ statusCode: 400, message: '学号已存在' })
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     if (account) {
-      await tx.userAccount.update({
-        where: { userId },
-        data: {
-          userId: targetUserId,
-          ...(body.name === undefined ? {} : { name: body.name }),
-          ...(body.className === undefined ? {} : { className: body.className })
-        }
-      })
+      const accountData: Partial<typeof schema.userAccounts.$inferInsert> = {
+        userId: targetUserId
+      }
+      if (body.name !== undefined) accountData.name = body.name
+      if (body.className !== undefined) accountData.className = body.className
+
+      await tx.update(schema.userAccounts)
+        .set(accountData)
+        .where(eq(schema.userAccounts.userId, userId))
     }
 
     if (targetUserId !== userId) {
-      await tx.sessionToken.updateMany({
-        where: { userId },
-        data: { userId: targetUserId }
-      })
+      await tx.update(schema.sessionTokens)
+        .set({ userId: targetUserId })
+        .where(eq(schema.sessionTokens.userId, userId))
     }
 
-    await tx.studentProfile.update({
-      where: { userId },
-      data: {
-        userId: targetUserId,
-        ...(body.name === undefined ? {} : { name: body.name }),
-        ...(body.className === undefined ? {} : { className: body.className }),
-        ...(body.gender === undefined ? {} : { gender: body.gender }),
-        ...(body.birthDate === undefined ? {} : { birthDate: body.birthDate }),
-        ...(body.phone === undefined ? {} : { phone: body.phone }),
-        ...(body.address === undefined ? {} : { address: body.address }),
-        ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }),
-        ...(body.major === undefined ? {} : { major: body.major })
-      }
-    })
+    const profileData: Partial<typeof schema.studentProfiles.$inferInsert> = {
+      userId: targetUserId
+    }
+    if (body.name !== undefined) profileData.name = body.name
+    if (body.className !== undefined) profileData.className = body.className
+    if (body.gender !== undefined) profileData.gender = body.gender
+    if (body.birthDate !== undefined) profileData.birthDate = body.birthDate
+    if (body.phone !== undefined) profileData.phone = body.phone
+    if (body.address !== undefined) profileData.address = body.address
+    if (body.guardianPhone !== undefined) profileData.guardianPhone = body.guardianPhone
+    if (body.major !== undefined) profileData.major = body.major
+
+    await tx.update(schema.studentProfiles)
+      .set(profileData)
+      .where(eq(schema.studentProfiles.userId, userId))
   })
 
-  return prisma.studentProfile.findUnique({ where: { userId: targetUserId } })
+  const [updated] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, targetUserId))
+  return updated || null
 }

@@ -9,10 +9,11 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:seed": "node --env-file=.env prisma/seed.mjs",
-    "db:reset": "prisma migrate reset --force"
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx server/db/seed.ts",
+    "db:reset": "drizzle-kit drop && drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.102",
@@ -20,8 +21,6 @@
     "@internationalized/date": "^3.12.1",
     "@nuxt/ui": "^4.6.1",
     "@nuxtjs/i18n": "^10.2.4",
-    "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
     "@tanstack/table-core": "^8.21.3",
     "@unovis/ts": "^1.6.4",
     "@unovis/vue": "^1.6.4",
@@ -29,6 +28,7 @@
     "@vueuse/integrations": "^14.2.1",
     "@vueuse/nuxt": "^14.2.1",
     "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.45.2",
     "nuxt": "^4.4.2",
     "nuxt-charts": "^2.1.4",
     "nuxt-skill-hub": "0.0.8",
@@ -43,8 +43,9 @@
     "@nuxt/eslint": "^1.15.2",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.2.1",
-    "prisma": "^7.7.0",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.2.7"
   },

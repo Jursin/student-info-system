@@ -4,7 +4,7 @@
 [![Nuxt UI](https://img.shields.io/badge/Nuxt_UI-4.6-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js&labelColor=1C1C1C)](https://vuejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&labelColor=1E1E1E)](https://www.typescriptlang.org)
-[![Prisma](https://img.shields.io/badge/Prisma-7.7-2D3748?logo=prisma&labelColor=111111)](https://www.prisma.io)
+[![Drizzle](https://img.shields.io/badge/Drizzle-0.45-C5F74F?logo=drizzle&labelColor=151718)](https://orm.drizzle.team)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&labelColor=10233E)](https://www.postgresql.org)
 [![pnpm](https://img.shields.io/badge/pnpm-10.33-F69220?logo=pnpm&labelColor=1A1A1A)](https://pnpm.io)
 
@@ -16,7 +16,7 @@
 - UI 组件：Nuxt UI
 - 语言与类型系统：TypeScript
 - 后端运行时：Nuxt Server Routes（Nitro）
-- 数据访问层：Prisma
+- 数据访问层：Drizzle ORM
 - 数据库：PostgreSQL
 - 工程化与包管理：pnpm、ESLint
 
@@ -39,12 +39,6 @@ pnpm install
 在项目根目录复制 `.env.example` 为 `.env`，并配置数据库链接
 
 
-### 生成 Prisma Client
-
-```bash
-pnpm run db:generate
-```
-
 ### 初始化数据库
 
 如果你已经准备好数据库连接，可以执行：
@@ -55,9 +49,9 @@ pnpm run db:seed
 ```
 
 > [!tip]
-> - `db:push` 会将 Prisma Schema 推送到数据库，`db:seed` 会写入初始超级管理员和基础数据。
+> - `db:push` 会将 Drizzle Schema 推送到数据库，`db:seed` 会写入初始超级管理员和基础数据。
 >
-> - 使用 `pnpm run db:reset` 重置数据库并重新应用迁移
+> - 使用 `pnpm run db:studio` 启动数据库管理界面
 
 ### 启动开发服务器
 
@@ -86,12 +80,6 @@ pnpm run dev
 ```bash
 pnpm run lint
 pnpm run typecheck
-```
-
-如果涉及 Prisma Schema 修改，先执行：
-
-```bash
-pnpm run db:generate
 ```
 
 ## 许可
