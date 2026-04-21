@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { DateValue } from '@internationalized/date'
 import type { DynamicTable, OperationLog, StudentProfile } from '~/types'
+import { fromDateValue, toDateValue } from '~/utils/date'
 
-const { isAdmin, isStudent } = useRole()
+const { isAdmin, isStudent, isClassLeader } = useRole()
+const isStudentLike = computed(() => isStudent.value || isClassLeader.value)
 
 type TrendKey = 'login' | 'create' | 'delete' | 'update'
 type TrendRange = '24h' | '7d' | '1m' | '6m' | 'custom'
@@ -28,21 +29,70 @@ const { data: roleStats } = await useFetch<{ count: number }>('/api/metrics/role
 
 const { data: studentStats } = await useFetch<{ myTableCount: number, classStudentCount: number }>('/api/metrics/student-dashboard', {
   default: () => ({ myTableCount: 0, classStudentCount: 0 }),
-  immediate: isStudent.value
+  immediate: isStudentLike.value
 })
 
-const classCount = computed(() => new Set(data.value.map(item => item.className)).size)
+const classCount = computed(() => new Set(data.value.map(item => item.className.trim()).filter(Boolean)).size)
 const roleCount = computed(() => roleStats.value.count)
 const tableCount = computed(() => isAdmin.value ? tables.value.length : 0)
 const myTableCount = computed(() => studentStats.value.myTableCount)
 const classStudentCount = computed(() => studentStats.value.classStudentCount)
+const statsGridClass = computed(() => isStudentLike.value ? 'lg:grid-cols-2 gap-4 sm:gap-6' : 'lg:grid-cols-4 gap-4 sm:gap-6')
+const statsCards = computed(() => {
+  if (isStudentLike.value) {
+    return [
+      {
+        key: 'my-table-count',
+        title: '我的信息表数量',
+        icon: 'i-lucide-table-properties',
+        value: myTableCount.value
+      },
+      {
+        key: 'class-student-count',
+        title: '本班学生人数',
+        icon: 'i-lucide-users',
+        value: classStudentCount.value
+      }
+    ]
+  }
+
+  return [
+    {
+      key: 'role-count',
+      title: '角色数量',
+      icon: 'i-lucide-shield-user',
+      value: roleCount.value
+    },
+    {
+      key: 'table-count',
+      title: '信息表数量',
+      icon: 'i-lucide-table-properties',
+      value: tableCount.value
+    },
+    {
+      key: 'student-count',
+      title: '学生总人数',
+      icon: 'i-lucide-users',
+      value: data.value.length
+    },
+    {
+      key: 'class-count',
+      title: '班级数量',
+      icon: 'i-lucide-book-user',
+      value: classCount.value
+    }
+  ]
+})
 
 const trendRange = ref<TrendRange>('7d')
+const appliedTrendRange = ref<TrendRange>('7d')
 const customRangeOpen = ref(false)
-const trendCustomStart = ref<{ year?: number, month?: number, day?: number } | null>(null)
-const trendCustomEnd = ref<{ year?: number, month?: number, day?: number } | null>(null)
-const trendCustomStartModel = computed(() => trendCustomStart.value as DateValue | null)
-const trendCustomEndModel = computed(() => trendCustomEnd.value as DateValue | null)
+const trendCustomStart = ref('')
+const trendCustomEnd = ref('')
+const appliedTrendCustomStart = ref('')
+const appliedTrendCustomEnd = ref('')
+const trendCustomStartModel = computed(() => toDateValue(trendCustomStart.value))
+const trendCustomEndModel = computed(() => toDateValue(trendCustomEnd.value))
 const trendAllKeys: TrendKey[] = ['login', 'create', 'delete', 'update']
 const selectedTrendKeys = ref<TrendKey[]>([...trendAllKeys])
 
@@ -170,37 +220,50 @@ function setDefaultCustomRange() {
   const lastYearToday = new Date(today)
   lastYearToday.setFullYear(today.getFullYear() - 1)
 
-  const startText = toDateText(lastYearToday)
-  const endText = toDateText(today)
-
-  trendCustomStart.value = {
-    year: Number(startText.slice(0, 4)),
-    month: Number(startText.slice(5, 7)),
-    day: Number(startText.slice(8, 10))
-  }
-  trendCustomEnd.value = {
-    year: Number(endText.slice(0, 4)),
-    month: Number(endText.slice(5, 7)),
-    day: Number(endText.slice(8, 10))
-  }
+  trendCustomStart.value = toDateText(lastYearToday)
+  trendCustomEnd.value = toDateText(today)
 }
 
 watch(trendRange, (value) => {
   if (value === 'custom') {
-    setDefaultCustomRange()
+    if (appliedTrendRange.value === 'custom' && appliedTrendCustomStart.value && appliedTrendCustomEnd.value) {
+      trendCustomStart.value = appliedTrendCustomStart.value
+      trendCustomEnd.value = appliedTrendCustomEnd.value
+    } else {
+      setDefaultCustomRange()
+    }
     customRangeOpen.value = true
+    return
+  }
+
+  appliedTrendRange.value = value
+})
+
+watch(customRangeOpen, (open) => {
+  if (!open && trendRange.value === 'custom' && appliedTrendRange.value !== 'custom') {
+    trendRange.value = appliedTrendRange.value
+    trendCustomStart.value = appliedTrendCustomStart.value
+    trendCustomEnd.value = appliedTrendCustomEnd.value
   }
 })
 
-function calendarDateToDate(value: { year?: number, month?: number, day?: number } | null, endOfDay = false): Date | null {
-  if (!value || !value.year || !value.month || !value.day) {
+function calendarDateToDate(value: string, endOfDay = false): Date | null {
+  if (!value) {
+    return null
+  }
+
+  const [yearText, monthText, dayText] = value.split('-')
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  if (!year || !month || !day) {
     return null
   }
 
   return new Date(
-    value.year,
-    value.month - 1,
-    value.day,
+    year,
+    month - 1,
+    day,
     endOfDay ? 23 : 0,
     endOfDay ? 59 : 0,
     endOfDay ? 59 : 0,
@@ -223,26 +286,26 @@ function formatBucketLabel(date: Date, unit: 'hour' | 'day' | 'month'): string {
 function getRangeConfig(): { start: Date, end: Date, unit: 'hour' | 'day' | 'month' } {
   const now = new Date()
 
-  if (trendRange.value === '24h') {
+  if (appliedTrendRange.value === '24h') {
     return { start: new Date(now.getTime() - 24 * 60 * 60 * 1000), end: now, unit: 'hour' as const }
   }
 
-  if (trendRange.value === '7d') {
+  if (appliedTrendRange.value === '7d') {
     return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now, unit: 'day' as const }
   }
 
-  if (trendRange.value === '1m') {
+  if (appliedTrendRange.value === '1m') {
     return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now, unit: 'day' as const }
   }
 
-  if (trendRange.value === '6m') {
+  if (appliedTrendRange.value === '6m') {
     const start = new Date(now)
     start.setMonth(start.getMonth() - 6)
     return { start, end: now, unit: 'month' as const }
   }
 
-  const customStart = calendarDateToDate(trendCustomStart.value)
-  const customEnd = calendarDateToDate(trendCustomEnd.value, true)
+  const customStart = calendarDateToDate(appliedTrendCustomStart.value)
+  const customEnd = calendarDateToDate(appliedTrendCustomEnd.value, true)
   const end = customEnd || now
   const start = customStart && customStart.getTime() < end.getTime()
     ? customStart
@@ -340,6 +403,33 @@ const trendChartData = computed(() => trendSeries.value.map(item => ({
   update: item.update
 })))
 
+const studentTableTrendData = computed(() => {
+  const { start, end, unit } = getRangeConfig()
+  const buckets = createBuckets(start, end, unit)
+
+  return buckets.map(bucket => ({
+    date: bucket.label,
+    tables: myTableCount.value
+  }))
+})
+
+const studentTrendCategories = {
+  tables: {
+    name: '信息表数量',
+    color: 'var(--ui-primary)'
+  }
+}
+
+const trendTitle = computed(() => isStudentLike.value ? '我的信息表数量趋势' : '事件趋势')
+const trendData = computed(() => isStudentLike.value ? studentTableTrendData.value : trendChartData.value)
+const trendCategoriesForView = computed(() => isStudentLike.value ? studentTrendCategories : visibleTrendCategories.value)
+const trendDataForChart = computed(() => trendData.value as Array<Record<string, string | number>>)
+const trendCategoriesForChart = computed(() => trendCategoriesForView.value as Record<string, { name: string, color: string }>)
+
+function trendXFormatter(index: number): string {
+  return trendData.value[index]?.date || ''
+}
+
 const trendTooltipStyle = {
   '--vis-tooltip-background-color': 'var(--ui-bg)',
   '--vis-tooltip-border-color': 'var(--ui-border)',
@@ -350,20 +440,27 @@ const trendTooltipStyle = {
   '--vis-tooltip-box-shadow': '0 8px 20px color-mix(in oklab, var(--ui-border) 40%, transparent)'
 }
 
-function trendXFormatter(index: number): string {
-  return trendChartData.value[index]?.date || ''
-}
-
 function applyCustomRange() {
+  appliedTrendCustomStart.value = trendCustomStart.value
+  appliedTrendCustomEnd.value = trendCustomEnd.value
+  appliedTrendRange.value = 'custom'
+  trendRange.value = 'custom'
   customRangeOpen.value = false
 }
 
+function cancelCustomRange() {
+  customRangeOpen.value = false
+  trendRange.value = appliedTrendRange.value
+  trendCustomStart.value = appliedTrendCustomStart.value
+  trendCustomEnd.value = appliedTrendCustomEnd.value
+}
+
 function updateTrendCustomStart(value: unknown) {
-  trendCustomStart.value = (value ?? null) as { year?: number, month?: number, day?: number } | null
+  trendCustomStart.value = fromDateValue(value as { year: number, month: number, day: number } | null)
 }
 
 function updateTrendCustomEnd(value: unknown) {
-  trendCustomEnd.value = (value ?? null) as { year?: number, month?: number, day?: number } | null
+  trendCustomEnd.value = fromDateValue(value as { year: number, month: number, day: number } | null)
 }
 </script>
 
@@ -383,10 +480,12 @@ function updateTrendCustomEnd(value: unknown) {
 
     <template #body>
       <div class="space-y-6">
-        <UPageGrid v-if="isStudent" class="lg:grid-cols-2 gap-4 sm:gap-6">
+        <UPageGrid :class="statsGridClass">
           <UPageCard
-            title="我的信息表数量"
-            icon="i-lucide-table-properties"
+            v-for="card in statsCards"
+            :key="card.key"
+            :title="card.title"
+            :icon="card.icon"
             variant="subtle"
             :ui="{
               title: 'font-normal text-muted text-xs uppercase',
@@ -395,94 +494,17 @@ function updateTrendCustomEnd(value: unknown) {
             class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
           >
             <p class="text-2xl font-semibold text-highlighted">
-              {{ myTableCount }}
-            </p>
-          </UPageCard>
-
-          <UPageCard
-            title="本班学生人数"
-            icon="i-lucide-users"
-            variant="subtle"
-            :ui="{
-              title: 'font-normal text-muted text-xs uppercase',
-              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
-            }"
-            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
-          >
-            <p class="text-2xl font-semibold text-highlighted">
-              {{ classStudentCount }}
+              {{ card.value }}
             </p>
           </UPageCard>
         </UPageGrid>
 
-        <UPageGrid v-else class="lg:grid-cols-4 gap-4 sm:gap-6">
-          <UPageCard
-            title="角色数量"
-            icon="i-lucide-shield-user"
-            variant="subtle"
-            :ui="{
-              title: 'font-normal text-muted text-xs uppercase',
-              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
-            }"
-            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
-          >
-            <p class="text-2xl font-semibold text-highlighted">
-              {{ roleCount }}
-            </p>
-          </UPageCard>
-
-          <UPageCard
-            title="信息表数量"
-            icon="i-lucide-table-properties"
-            variant="subtle"
-            :ui="{
-              title: 'font-normal text-muted text-xs uppercase',
-              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
-            }"
-            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
-          >
-            <p class="text-2xl font-semibold text-highlighted">
-              {{ tableCount }}
-            </p>
-          </UPageCard>
-
-          <UPageCard
-            title="学生总人数"
-            icon="i-lucide-users"
-            variant="subtle"
-            :ui="{
-              title: 'font-normal text-muted text-xs uppercase',
-              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
-            }"
-            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
-          >
-            <p class="text-2xl font-semibold text-highlighted">
-              {{ data.length }}
-            </p>
-          </UPageCard>
-
-          <UPageCard
-            title="班级数量"
-            icon="i-lucide-book-user"
-            variant="subtle"
-            :ui="{
-              title: 'font-normal text-muted text-xs uppercase',
-              leading: 'p-2.5 rounded-full bg-primary/10 ring ring-inset ring-primary/25'
-            }"
-            class="relative transition-all duration-200 hover:shadow-lg hover:shadow-primary/10 hover:ring-1 hover:ring-primary/20 hover:z-1"
-          >
-            <p class="text-2xl font-semibold text-highlighted">
-              {{ classCount }}
-            </p>
-          </UPageCard>
-        </UPageGrid>
-
-        <UCard v-if="!isStudent">
+        <UCard v-if="isStudentLike || isAdmin">
           <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-3">
                 <h2 class="text-lg font-semibold text-highlighted">
-                  事件趋势
+                  {{ trendTitle }}
                 </h2>
                 <USelect
                   v-model="trendRange"
@@ -491,7 +513,7 @@ function updateTrendCustomEnd(value: unknown) {
                 />
               </div>
 
-              <div class="flex items-center gap-2">
+              <div v-if="isAdmin" class="flex items-center gap-2">
                 <UDropdownMenu :items="trendFilterItems" :content="{ align: 'end' }">
                   <UButton
                     class="w-32 justify-between"
@@ -507,20 +529,16 @@ function updateTrendCustomEnd(value: unknown) {
             </div>
           </template>
 
-          <div v-if="!isAdmin" class="text-sm text-muted">
-            当前角色无权查看全局事件趋势。
-          </div>
-
-          <div v-else class="space-y-2">
+          <div class="space-y-2">
             <LineChart
               :style="trendTooltipStyle"
-              :data="trendChartData"
-              :categories="visibleTrendCategories"
-              :height="320"
+              :data="trendDataForChart"
+              :categories="trendCategoriesForChart"
+              :height="isStudentLike ? 280 : 320"
               x-label="日期"
-              y-label="次数"
+              :y-label="isStudentLike ? '数量' : '次数'"
               :x-formatter="trendXFormatter"
-              :curve-type="'step' as any"
+              :curve-type="isStudentLike ? undefined : ('step' as any)"
               :line-width="3"
               :x-grid-line="false"
               :y-grid-line="true"
@@ -529,44 +547,49 @@ function updateTrendCustomEnd(value: unknown) {
               :legend-position="'top-right' as any"
             />
           </div>
-
-          <UModal v-model:open="customRangeOpen" title="自定义日期范围" :ui="{ content: 'max-w-xl' }">
-            <template #body>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <UFormField label="开始日期">
-                  <UInputDate
-                    :model-value="trendCustomStartModel"
-                    locale="zh-CN"
-                    icon="i-lucide-calendar-days"
-                    class="w-full"
-                    @update:model-value="updateTrendCustomStart"
-                  />
-                </UFormField>
-
-                <UFormField label="结束日期">
-                  <UInputDate
-                    :model-value="trendCustomEndModel"
-                    locale="zh-CN"
-                    icon="i-lucide-calendar-days"
-                    class="w-full"
-                    @update:model-value="updateTrendCustomEnd"
-                  />
-                </UFormField>
-              </div>
-            </template>
-
-            <template #footer>
-              <div class="flex justify-end gap-2 w-full">
-                <UButton color="neutral" variant="ghost" @click="customRangeOpen = false">
-                  取消
-                </UButton>
-                <UButton @click="applyCustomRange">
-                  应用
-                </UButton>
-              </div>
-            </template>
-          </UModal>
         </UCard>
+
+        <UModal
+          v-model:open="customRangeOpen"
+          title="自定义日期范围"
+          :portal="true"
+          :ui="{ content: 'max-w-xl' }"
+        >
+          <template #body>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <UFormField label="开始日期">
+                <UInputDate
+                  :model-value="trendCustomStartModel"
+                  locale="zh-CN"
+                  icon="i-lucide-calendar-days"
+                  class="w-full"
+                  @update:model-value="updateTrendCustomStart"
+                />
+              </UFormField>
+
+              <UFormField label="结束日期">
+                <UInputDate
+                  :model-value="trendCustomEndModel"
+                  locale="zh-CN"
+                  icon="i-lucide-calendar-days"
+                  class="w-full"
+                  @update:model-value="updateTrendCustomEnd"
+                />
+              </UFormField>
+            </div>
+          </template>
+
+          <template #footer>
+            <div class="flex justify-end gap-2 w-full">
+              <UButton color="neutral" variant="ghost" @click="cancelCustomRange">
+                取消
+              </UButton>
+              <UButton @click="applyCustomRange">
+                应用
+              </UButton>
+            </div>
+          </template>
+        </UModal>
       </div>
     </template>
   </UDashboardPanel>

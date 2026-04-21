@@ -8,7 +8,7 @@ const CLASS_LEADER_DEFAULT_PASSWORD = 'Stu1234567'
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
-  if (!isSuperAdmin(user)) {
+  if (user.role !== 'admin' && !isSuperAdmin(user)) {
     throw createError({ statusCode: 403, message: '无权限管理角色' })
   }
 
@@ -20,6 +20,10 @@ export default eventHandler(async (event) => {
   const current = await findUserByUserId(userId)
   if (!current) {
     throw createError({ statusCode: 404, message: '用户不存在' })
+  }
+
+  if (user.role === 'admin' && current.role === 'admin' && current.userId !== user.userId) {
+    throw createError({ statusCode: 403, message: '管理员不可修改其它管理员信息' })
   }
 
   if (current.role === 'superAdmin') {

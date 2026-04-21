@@ -22,28 +22,37 @@ const UButton = resolveComponent('UButton')
 const UDropdownMenu = resolveComponent('UDropdownMenu')
 const UBadge = resolveComponent('UBadge')
 
+type RolesTableRow = {
+  id: string
+  original: RoleUser
+  getIsSelected: () => boolean
+  toggleSelected: (value: boolean) => void
+}
+
 type RolesTableRef = {
   tableApi?: {
     getColumn: (id: string) => { setFilterValue: (value: string | undefined) => void } | undefined
-    getFilteredSelectedRowModel: () => { rows: unknown[] }
-    getFilteredRowModel: () => { rows: unknown[] }
+    getFilteredSelectedRowModel: () => { rows: RolesTableRow[] }
+    getFilteredRowModel: () => { rows: RolesTableRow[] }
     getState: () => { pagination: { pageIndex: number, pageSize: number } }
     setPageIndex: (pageIndex: number) => void
   }
 }
 
 const toast = useToast()
-const { isSuperAdmin } = useRole()
+const { isAdmin } = useRole()
+const { user } = useAuth()
 const tableRef = ref<RolesTableRef | null>(null)
 const createOpen = ref(false)
 const editOpen = ref(false)
 const creating = ref(false)
 const updating = ref(false)
 const resetting = ref(false)
-const deletingId = ref('')
-const deleteConfirmOpen = ref(false)
-const deleteConfirmLoading = ref(false)
-const deleteConfirmId = ref('')
+const roleActionConfirmOpen = ref(false)
+const roleActionConfirmLoading = ref(false)
+const roleActionType = ref<'delete' | 'reset'>('delete')
+const roleActionIds = ref<string[]>([])
+const roleActionNames = ref<string[]>([])
 const keyword = ref('')
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 const columnFilters = ref([{ id: 'userId', value: '' }])
@@ -54,13 +63,28 @@ const formState = reactive({
   userId: '',
   name: '',
   className: '',
-  role: 'admin' as 'admin' | 'classLeader',
-  password: ''
+  password: '',
+  role: 'admin' as 'admin' | 'classLeader'
 })
 
 const editingId = ref('')
 const editingRole = ref<UserRole | null>(null)
 const isEditingSuperAdmin = computed(() => editingRole.value === 'superAdmin')
+const isEditingMode = computed(() => Boolean(editingId.value))
+const roleFormOpen = computed({
+  get: () => createOpen.value || editOpen.value,
+  set: (value: boolean) => {
+    if (!value) {
+      createOpen.value = false
+      editOpen.value = false
+      resetForm()
+    }
+  }
+})
+const roleFormTitle = computed(() => isEditingMode.value ? '修改角色' : '添加角色')
+const roleFormId = computed(() => isEditingMode.value ? 'edit-role-user-form' : 'create-role-user-form')
+const roleFormSubmitText = computed(() => isEditingMode.value ? '保存修改' : '创建')
+const roleFormLoading = computed(() => isEditingMode.value ? updating.value : creating.value)
 
 const { data: users, status, refresh } = await useFetch<RoleUser[]>('/api/admin/roles/users', {
   default: () => []
@@ -100,18 +124,75 @@ const usersData = computed(() => {
   })
 })
 
+function canManageRoleRow(row: RoleUser) {
+  if (!isAdmin.value || row.role === 'superAdmin') {
+    return false
+  }
+
+  if (user.value?.role === 'admin' && row.role === 'admin' && row.userId !== user.value.userId) {
+    return false
+  }
+
+  return true
+}
+
+const selectedActionableRows = computed(() => {
+  const rows = tableRef.value?.tableApi?.getFilteredSelectedRowModel().rows || []
+  return rows.filter(row => canManageRoleRow(row.original))
+})
+
+const selectedActionableCount = computed(() => selectedActionableRows.value.length)
+
+const roleActionConfirmTitle = computed(() => roleActionType.value === 'delete' ? '确认删除' : '确认重置密码')
+const roleActionConfirmDescription = computed(() => {
+  const count = roleActionIds.value.length
+  if (roleActionType.value === 'delete') {
+    return count > 1
+      ? `即将删除 ${count} 名用户，删除后不可恢复，是否继续？`
+      : `即将删除用户 ${roleActionNames.value[0] || roleActionIds.value[0] || ''}，删除后不可恢复，是否继续？`
+  }
+
+  return count > 1
+    ? `即将重置 ${count} 名用户的密码，是否继续？`
+    : `即将重置用户 ${roleActionNames.value[0] || roleActionIds.value[0] || ''} 的密码，是否继续？`
+})
+
 const columns: TableColumn<RoleUser>[] = [
   {
     id: 'select',
-    header: ({ table }) => h(UCheckbox, {
-      'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
-      'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
-      'aria-label': 'Select all',
-      'class': 'align-middle'
-    }),
+    header: ({ table }) => {
+      const pageRows = table.getPaginationRowModel().rows as RolesTableRow[]
+      const selectableRows = pageRows.filter(row => row.original.role !== 'superAdmin')
+      const allSelected = selectableRows.length > 0 && selectableRows.every(row => row.getIsSelected())
+      const someSelected = selectableRows.some(row => row.getIsSelected())
+
+      return h(UCheckbox, {
+        'modelValue': someSelected && !allSelected ? 'indeterminate' : allSelected,
+        'onUpdate:modelValue': () => {
+          const nextSelected = !allSelected
+          const currentSelection = rowSelection.value as Record<string, boolean>
+          const nextRowSelection: Record<string, boolean> = nextSelected
+            ? { ...currentSelection }
+            : Object.fromEntries(
+                Object.entries(currentSelection).filter(([key]) => !selectableRows.some(row => row.id === key))
+              )
+
+          for (const row of selectableRows) {
+            if (nextSelected) {
+              nextRowSelection[row.id] = true
+            }
+          }
+
+          rowSelection.value = nextRowSelection
+        },
+        'aria-label': 'Select all',
+        'class': 'align-middle'
+      })
+    },
     cell: ({ row }) => h(UCheckbox, {
       'modelValue': row.getIsSelected(),
       'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
+      'disabled': row.original.role === 'superAdmin',
       'aria-label': 'Select row',
       'class': 'align-middle'
     }),
@@ -155,7 +236,7 @@ const columns: TableColumn<RoleUser>[] = [
     },
     enableHiding: false,
     cell: ({ row }) => {
-      if (!isSuperAdmin.value) {
+      if (!canManageRoleRow(row.original)) {
         return h('div')
       }
 
@@ -174,6 +255,7 @@ const columns: TableColumn<RoleUser>[] = [
 const userIdLabel = computed(() => formState.role === 'admin' ? '用户名' : '学号')
 const isAdminType = computed(() => formState.role === 'admin')
 const isCreatingClassLeader = computed(() => !editingId.value && formState.role === 'classLeader')
+const showAdminPasswordInput = computed(() => !isEditingMode.value && formState.role === 'admin')
 const classLeaderLookupLoading = ref(false)
 const classLeaderLookupMessage = ref('')
 let classLeaderLookupTimer: ReturnType<typeof setTimeout> | null = null
@@ -184,6 +266,10 @@ watch(keyword, (value) => {
 })
 
 function getRowItems(row: RoleUser): DropdownMenuItem[] {
+  if (!canManageRoleRow(row)) {
+    return []
+  }
+
   const items: DropdownMenuItem[] = []
 
   items.push({
@@ -197,19 +283,52 @@ function getRowItems(row: RoleUser): DropdownMenuItem[] {
       label: '删除',
       icon: 'i-lucide-trash',
       color: 'error',
-      onSelect: () => requestDeleteUser(row.userId)
+      onSelect: () => requestDeleteUser(row)
     })
   }
 
   return items
 }
 
+function sanitizeTextInput(value: unknown, maxLength: number) {
+  return String(value ?? '').slice(0, maxLength)
+}
+
+function sanitizeNameInput(value: unknown) {
+  return sanitizeTextInput(value, 10)
+}
+
+function sanitizeClassNameInput(value: unknown) {
+  return sanitizeTextInput(value, 20)
+}
+
+function sanitizeUserIdInput(value: unknown) {
+  const raw = String(value ?? '')
+  const sanitized = formState.role === 'admin'
+    ? raw.replace(/[^\w]/g, '')
+    : raw.replace(/\D+/g, '')
+
+  return sanitizeTextInput(sanitized, 20)
+}
+
+function updateFormName(value: unknown) {
+  formState.name = sanitizeNameInput(value)
+}
+
+function updateFormUserId(value: unknown) {
+  formState.userId = sanitizeUserIdInput(value)
+}
+
+function updateFormClassName(value: unknown) {
+  formState.className = sanitizeClassNameInput(value)
+}
+
 function resetForm() {
   formState.userId = ''
   formState.name = ''
   formState.className = ''
-  formState.role = 'admin'
   formState.password = ''
+  formState.role = 'admin'
   editingId.value = ''
   editingRole.value = null
   classLeaderLookupMessage.value = ''
@@ -275,11 +394,7 @@ function validateForm(state: typeof formState) {
     errors.push({ name: 'className', message: '请输入班级' })
   }
 
-  if (state.password && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/.test(state.password)) {
-    errors.push({ name: 'password', message: '密码至少10位，且包含大小写字母和数字' })
-  }
-
-  if (!editingId.value && isAdminType.value && !state.password.trim()) {
+  if (showAdminPasswordInput.value && !state.password.trim()) {
     errors.push({ name: 'password', message: '请输入密码' })
   }
 
@@ -308,18 +423,18 @@ async function createUser() {
     const body: {
       userId: string
       role: 'admin' | 'classLeader'
-      password?: string
       name?: string
       className?: string
+      password?: string
     } = {
       userId: formState.userId,
-      role: formState.role
+      role: formState.role,
+      name: formState.name,
+      className: formState.className
     }
 
     if (formState.role === 'admin') {
-      body.name = formState.name
-      body.className = ''
-      body.password = formState.password
+      body.password = formState.password.trim()
     }
 
     await $fetch('/api/admin/roles/users', {
@@ -343,7 +458,6 @@ watch(() => formState.role, (role) => {
   if (!editingId.value && role === 'classLeader') {
     formState.name = ''
     formState.className = ''
-    formState.password = ''
     classLeaderLookupMessage.value = ''
   }
 })
@@ -377,15 +491,18 @@ async function updateUser() {
 
   updating.value = true
   try {
-    const body = isEditingSuperAdmin.value
-      ? { name: formState.name }
-      : {
-          userId: formState.userId,
-          name: formState.name,
-          className: isAdminType.value ? '' : formState.className,
-          role: formState.role,
-          password: formState.password || undefined
-        }
+    const body: Record<string, string> = {}
+    if (isEditingSuperAdmin.value) {
+      body.name = formState.name
+    } else {
+      body.userId = formState.userId
+      body.role = formState.role
+
+      if (editingRole.value !== 'classLeader') {
+        body.name = formState.name
+        body.className = isAdminType.value ? '' : formState.className
+      }
+    }
 
     await $fetch(`/api/admin/roles/users/${editingId.value}`, {
       method: 'PUT',
@@ -404,38 +521,69 @@ async function updateUser() {
   }
 }
 
-// 请求删除用户 - 打开确认弹窗
-function requestDeleteUser(id: string) {
-  deleteConfirmId.value = id
-  deleteConfirmOpen.value = true
+function openRoleActionConfirm(type: 'delete' | 'reset', rows: RoleUser[]) {
+  const actionableRows = rows.filter(row => row.role !== 'superAdmin')
+  if (!actionableRows.length) {
+    return
+  }
+
+  roleActionType.value = type
+  roleActionIds.value = actionableRows.map(row => row.userId)
+  roleActionNames.value = actionableRows.map(row => row.name)
+  roleActionConfirmOpen.value = true
 }
 
-// 执行删除用户
-async function performDeleteUser(id: string) {
-  deletingId.value = id
-  try {
+function requestDeleteUser(row: RoleUser) {
+  openRoleActionConfirm('delete', [row])
+}
+
+function requestDeleteSelectedUsers() {
+  openRoleActionConfirm('delete', selectedActionableRows.value.map(row => row.original))
+}
+
+function requestResetSelectedUsers() {
+  openRoleActionConfirm('reset', selectedActionableRows.value.map(row => row.original))
+}
+
+async function performDeleteUsers(ids: string[]) {
+  for (const id of ids) {
     await $fetch(`/api/admin/roles/users/${id}`, {
       method: 'DELETE'
     })
-
-    toast.add({ title: '删除成功' })
-    await refresh()
-  } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
-    toast.add({ color: 'error', title: '删除失败', description })
-  } finally {
-    deletingId.value = ''
   }
 }
 
-// 确认删除 - 从弹窗中调用
-async function confirmDeleteUser() {
-  deleteConfirmLoading.value = true
+async function performResetPasswords(ids: string[]) {
+  for (const id of ids) {
+    await $fetch(`/api/admin/roles/users/${id}/password`, {
+      method: 'PUT'
+    })
+  }
+}
+
+async function confirmRoleAction() {
+  if (!roleActionIds.value.length) {
+    roleActionConfirmOpen.value = false
+    return
+  }
+
+  roleActionConfirmLoading.value = true
   try {
-    await performDeleteUser(deleteConfirmId.value)
-    deleteConfirmOpen.value = false
+    if (roleActionType.value === 'delete') {
+      await performDeleteUsers(roleActionIds.value)
+      toast.add({ title: roleActionIds.value.length > 1 ? `已批量删除 ${roleActionIds.value.length} 名用户` : '删除成功' })
+    } else {
+      await performResetPasswords(roleActionIds.value)
+      toast.add({ title: roleActionIds.value.length > 1 ? `已批量重置 ${roleActionIds.value.length} 名用户密码` : '重置密码成功' })
+    }
+
+    roleActionConfirmOpen.value = false
+    await refresh()
+  } catch (error: unknown) {
+    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    toast.add({ color: 'error', title: roleActionType.value === 'delete' ? '删除失败' : '重置密码失败', description })
   } finally {
-    deleteConfirmLoading.value = false
+    roleActionConfirmLoading.value = false
   }
 }
 
@@ -451,8 +599,7 @@ async function resetPassword() {
     })
 
     toast.add({ title: `已重置 ${editingId.value} 的密码为默认值 ${result.defaultPassword}` })
-    editOpen.value = false
-    resetForm()
+    roleFormOpen.value = false
     await refresh()
   } catch (error: unknown) {
     const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
@@ -460,6 +607,15 @@ async function resetPassword() {
   } finally {
     resetting.value = false
   }
+}
+
+async function submitRoleForm() {
+  if (isEditingMode.value) {
+    await updateUser()
+    return
+  }
+
+  await createUser()
 }
 </script>
 
@@ -487,14 +643,46 @@ async function resetPassword() {
             class="max-w-sm"
           />
 
-          <UButton
-            v-if="isSuperAdmin"
-            icon="i-lucide-user-round-plus"
-            color="primary"
-            @click="openCreate"
-          >
-            添加角色
-          </UButton>
+          <div class="flex items-center gap-2">
+            <UButton
+              v-if="isAdmin && selectedActionableCount > 0"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-trash"
+              @click="requestDeleteSelectedUsers"
+            >
+              批量删除
+              <template #trailing>
+                <UKbd>
+                  {{ selectedActionableCount }}
+                </UKbd>
+              </template>
+            </UButton>
+
+            <UButton
+              v-if="isAdmin && selectedActionableCount > 0"
+              color="primary"
+              variant="subtle"
+              icon="i-lucide-key-round"
+              @click="requestResetSelectedUsers"
+            >
+              批量重置密码
+              <template #trailing>
+                <UKbd>
+                  {{ selectedActionableCount }}
+                </UKbd>
+              </template>
+            </UButton>
+
+            <UButton
+              v-if="isAdmin"
+              icon="i-lucide-user-round-plus"
+              color="primary"
+              @click="openCreate"
+            >
+              添加角色
+            </UButton>
+          </div>
         </div>
 
         <UTable
@@ -514,8 +702,7 @@ async function resetPassword() {
 
         <div class="flex items-center justify-between gap-3 border-t border-default pt-4">
           <div class="text-sm text-muted">
-            {{ tableRef?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }} / {{
-              tableRef?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
+            {{ selectedActionableCount }} / {{ tableRef?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
           </div>
           <UPagination
             :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
@@ -525,25 +712,33 @@ async function resetPassword() {
           />
         </div>
 
-        <UModal v-model:open="createOpen" title="添加角色" :ui="{ content: 'max-w-2xl' }">
+        <UModal v-model:open="roleFormOpen" :title="roleFormTitle" :ui="{ content: 'max-w-2xl' }">
           <template #body>
             <UForm
-              id="create-role-user-form"
+              :id="roleFormId"
               :state="formState"
               :validate="validateForm"
               :validate-on="['input', 'blur', 'change']"
               class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @submit="createUser"
+              @submit="submitRoleForm"
             >
               <UFormField name="role" label="角色">
-                <USelect v-model="formState.role" :items="roleItems" class="w-full" />
+                <USelect
+                  v-model="formState.role"
+                  :items="roleItems"
+                  :disabled="isEditingSuperAdmin"
+                  class="w-full"
+                />
               </UFormField>
 
               <UFormField name="userId" :label="userIdLabel">
                 <UInput
-                  v-model="formState.userId"
+                  :model-value="formState.userId"
                   :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
+                  :disabled="isEditingSuperAdmin"
+                  maxlength="20"
                   class="w-full"
+                  @update:model-value="updateFormUserId"
                 />
                 <p v-if="isCreatingClassLeader && classLeaderLookupMessage" class="text-xs text-muted mt-1">
                   {{ classLeaderLookupMessage }}
@@ -552,87 +747,36 @@ async function resetPassword() {
 
               <UFormField name="name" label="姓名">
                 <UInput
-                  v-model="formState.name"
+                  :model-value="formState.name"
                   :placeholder="isCreatingClassLeader ? '将根据学号自动填充' : '请输入姓名'"
                   :loading="isCreatingClassLeader && classLeaderLookupLoading"
-                  :disabled="isCreatingClassLeader"
+                  :disabled="isCreatingClassLeader || isEditingSuperAdmin || (isEditingMode && editingRole === 'classLeader')"
+                  maxlength="10"
                   class="w-full"
+                  @update:model-value="updateFormName"
                 />
               </UFormField>
 
-              <UFormField v-if="!isAdminType" name="className" label="班级">
+              <UFormField v-if="!isAdminType || isEditingSuperAdmin" name="className" label="班级">
                 <UInput
-                  v-model="formState.className"
+                  :model-value="formState.className"
                   :placeholder="isCreatingClassLeader ? '将根据学号自动填充' : '请输入班级'"
                   :loading="isCreatingClassLeader && classLeaderLookupLoading"
-                  :disabled="isCreatingClassLeader"
+                  :disabled="isCreatingClassLeader || isEditingSuperAdmin || (isEditingMode && editingRole === 'classLeader')"
+                  maxlength="20"
                   class="w-full"
+                  @update:model-value="updateFormClassName"
                 />
               </UFormField>
 
-              <UFormField v-if="isAdminType" name="password" label="密码">
+              <UFormField v-if="showAdminPasswordInput" name="password" label="密码">
                 <UInput
                   v-model="formState.password"
                   type="password"
-                  placeholder="至少10位且包含大小写字母和数字"
+                  placeholder="请输入密码"
                   class="w-full"
                 />
               </UFormField>
-            </UForm>
-          </template>
-
-          <template #footer>
-            <div class="flex justify-end gap-2 w-full">
-              <UButton color="neutral" variant="ghost" @click="createOpen = false">
-                取消
-              </UButton>
-              <UButton type="submit" form="create-role-user-form" :loading="creating">
-                创建
-              </UButton>
-            </div>
-          </template>
-        </UModal>
-
-        <UModal v-model:open="editOpen" title="修改角色" :ui="{ content: 'max-w-2xl' }">
-          <template #body>
-            <UForm
-              id="edit-role-user-form"
-              :state="formState"
-              :validate="validateForm"
-              :validate-on="['input', 'blur', 'change']"
-              class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @submit="updateUser"
-            >
-              <UFormField name="name" label="姓名">
-                <UInput v-model="formState.name" placeholder="请输入姓名" class="w-full" />
-              </UFormField>
-
-              <template v-if="!isEditingSuperAdmin">
-                <UFormField name="role" label="角色">
-                  <USelect v-model="formState.role" :items="roleItems" class="w-full" />
-                </UFormField>
-
-                <UFormField v-if="!isAdminType" name="className" label="班级">
-                  <UInput v-model="formState.className" placeholder="请输入班级" class="w-full" />
-                </UFormField>
-
-                <UFormField name="userId" :label="userIdLabel">
-                  <UInput
-                    v-model="formState.userId"
-                    :placeholder="formState.role === 'admin' ? '请输入用户名' : '请输入学号'"
-                    class="w-full"
-                  />
-                </UFormField>
-
-                <UFormField name="password" label="密码">
-                  <UInput
-                    v-model="formState.password"
-                    type="password"
-                    placeholder="至少10位且包含大小写字母和数字"
-                    class="w-full"
-                  />
-                </UFormField>
-              </template>
             </UForm>
           </template>
 
@@ -640,7 +784,7 @@ async function resetPassword() {
             <div class="flex justify-between gap-2 w-full">
               <div>
                 <UButton
-                  v-if="!isEditingSuperAdmin"
+                  v-if="isEditingMode && !isEditingSuperAdmin"
                   color="primary"
                   variant="subtle"
                   :loading="resetting"
@@ -650,21 +794,21 @@ async function resetPassword() {
                 </UButton>
               </div>
               <div class="flex justify-end gap-2">
-                <UButton color="neutral" variant="ghost" @click="editOpen = false">
+                <UButton color="neutral" variant="ghost" @click="roleFormOpen = false">
                   取消
                 </UButton>
-                <UButton type="submit" form="edit-role-user-form" :loading="updating">
-                  保存修改
+                <UButton type="submit" :form="roleFormId" :loading="roleFormLoading">
+                  {{ roleFormSubmitText }}
                 </UButton>
               </div>
             </div>
           </template>
         </UModal>
 
-        <UModal v-model:open="deleteConfirmOpen" title="确认删除">
+        <UModal v-model:open="roleActionConfirmOpen" :title="roleActionConfirmTitle">
           <template #body>
             <p class="text-sm text-muted">
-              即将删除用户 {{ deleteConfirmId }}，删除后不可恢复，是否继续？
+              {{ roleActionConfirmDescription }}
             </p>
           </template>
 
@@ -673,15 +817,15 @@ async function resetPassword() {
               <UButton
                 color="neutral"
                 variant="ghost"
-                :disabled="deleteConfirmLoading"
-                @click="deleteConfirmOpen = false"
+                :disabled="roleActionConfirmLoading"
+                @click="roleActionConfirmOpen = false"
               >
                 取消
               </UButton>
               <UButton
-                color="error"
-                :loading="deleteConfirmLoading"
-                @click="confirmDeleteUser"
+                :color="roleActionType === 'delete' ? 'error' : 'primary'"
+                :loading="roleActionConfirmLoading"
+                @click="confirmRoleAction"
               >
                 确认
               </UButton>

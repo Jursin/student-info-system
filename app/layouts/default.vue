@@ -3,7 +3,7 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 import type { DynamicTable } from '~/types'
 
 const open = ref(false)
-const { isAdmin, isSuperAdmin } = useRole()
+const { isAdmin } = useRole()
 const { data: tables } = await useFetch<DynamicTable[]>('/api/tables', {
   default: () => []
 })
@@ -18,7 +18,7 @@ const links = computed<NavigationMenuItem[][]>(() => {
     }
   }]
 
-  if (isSuperAdmin.value) {
+  if (isAdmin.value) {
     primary.splice(1, 0, {
       label: '角色管理',
       icon: 'i-lucide-shield-user',

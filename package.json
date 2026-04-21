@@ -38,6 +38,7 @@
     "sortablejs": "^1.15.7",
     "tailwindcss": "^4.2.2",
     "vue": "^3.5.32",
+    "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {

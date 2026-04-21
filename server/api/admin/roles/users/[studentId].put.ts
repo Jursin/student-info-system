@@ -15,7 +15,7 @@ const ALLOWED_ROLES: UserRole[] = ['admin', 'classLeader']
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
-  if (!isSuperAdmin(user)) {
+  if (user.role !== 'admin' && !isSuperAdmin(user)) {
     throw createError({ statusCode: 403, message: '无权限管理角色' })
   }
 
@@ -30,6 +30,18 @@ export default eventHandler(async (event) => {
   }
 
   const body = await readBody<UpdateBody>(event)
+
+  if (user.role === 'admin' && current.role === 'admin' && current.userId !== user.userId) {
+    throw createError({ statusCode: 403, message: '管理员不可修改其它管理员信息' })
+  }
+
+  if (current.role === 'superAdmin' && !isSuperAdmin(user)) {
+    throw createError({ statusCode: 403, message: '管理员不可编辑超级管理员信息' })
+  }
+
+  if (current.role === 'classLeader' && (body.name !== undefined || body.className !== undefined)) {
+    throw createError({ statusCode: 400, message: '编辑班委角色时不允许修改姓名和班级' })
+  }
 
   if (current.role === 'superAdmin') {
     const hasRestrictedField = body.userId !== undefined || body.className !== undefined || body.role !== undefined || (body.password?.trim() || '') !== ''

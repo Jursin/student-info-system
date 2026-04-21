@@ -715,8 +715,11 @@ export async function listUserAccounts(params?: {
 export async function countDistinctUserRoles(): Promise<number> {
   await ensureSeedData()
 
-  const users = await db.select({ role: schema.userAccounts.role }).from(schema.userAccounts)
-  return new Set(users.map(user => user.role)).size
+  const [row] = await db.select({ count: drizzleCount() })
+    .from(schema.userAccounts)
+    .where(inArray(schema.userAccounts.role, ['superAdmin', 'admin', 'classLeader']))
+
+  return Number(row?.count || 0)
 }
 
 export async function createUserAccount(params: {

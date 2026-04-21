@@ -105,6 +105,18 @@ const typeMap: Record<string, string> = {
   singleChoice: '单选'
 }
 
+function sanitizeTextInput(value: unknown, maxLength: number) {
+  return String(value ?? '').slice(0, maxLength)
+}
+
+function updateTableName(value: unknown) {
+  designerState.tableName = sanitizeTextInput(value, 10)
+}
+
+function updateFieldLabel(value: unknown) {
+  designerState.fieldLabel = sanitizeTextInput(value, 10)
+}
+
 function removeField(index: number) {
   fields.value.splice(index, 1)
 }
@@ -189,6 +201,22 @@ const createFieldsTableWrap = ref<HTMLElement | null>(null)
 const editFieldsTableWrap = ref<HTMLElement | null>(null)
 const fieldsSortable = ref<{ stop?: () => void } | null>(null)
 
+function updateFieldLimit(value: unknown) {
+  const digits = String(value ?? '').replace(/\D+/g, '')
+  if (!digits) {
+    designerState.fieldLimit = undefined
+    return
+  }
+
+  const parsed = Number(digits)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    designerState.fieldLimit = undefined
+    return
+  }
+
+  designerState.fieldLimit = Math.min(parsed, 25)
+}
+
 function setupFieldsSortable(target: HTMLElement | null) {
   if (!import.meta.client || !target) {
     return
@@ -269,63 +297,87 @@ function getRowItems(row: Row<TableRow>) {
   return items
 }
 
-const columns: TableColumn<TableRow>[] = [
-  {
-    id: 'select',
-    header: ({ table }) => h(UCheckbox, {
-      'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
-      'onUpdate:modelValue': (value: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!value),
-      'aria-label': 'Select all',
-      'class': 'align-middle'
-    }),
-    cell: ({ row }) => h(UCheckbox, {
-      'modelValue': row.getIsSelected(),
-      'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
-      'aria-label': 'Select row',
-      'class': 'align-middle'
-    }),
-    enableHiding: false
-  },
-  {
-    accessorKey: 'name',
-    header: ({ column }) => buildSortableHeader(UButton, column, '表名'),
-    cell: ({ row }) => h('button', {
-      class: 'text-primary hover:underline',
-      onClick: () => router.push(`/tables/${row.original.id}`)
-    }, row.original.name)
-  },
-  {
-    accessorKey: 'createdBy',
-    header: ({ column }) => buildSortableHeader(UButton, column, '创建者')
-  },
-  {
-    accessorKey: 'fieldCount',
-    header: ({ column }) => buildSortableHeader(UButton, column, '字段数')
-  },
-  {
-    accessorKey: 'fieldsLabel',
-    header: ({ column }) => buildSortableHeader(UButton, column, '字段')
-  },
-  {
-    id: 'actions',
-    header: '',
-    meta: {
-      class: {
-        th: 'text-right',
-        td: 'text-right'
-      }
+const columns = computed<TableColumn<TableRow>[]>(() => {
+  const baseColumns: TableColumn<TableRow>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => buildSortableHeader(UButton, column, '表名'),
+      cell: ({ row }) => h('button', {
+        class: 'text-primary hover:underline',
+        onClick: () => router.push(`/tables/${row.original.id}`)
+      }, row.original.name)
     },
-    enableHiding: false,
-    cell: ({ row }) => h('div', { class: 'text-right' }, h(UDropdownMenu, {
-      items: getRowItems(row),
-      content: { align: 'end' }
-    }, () => h(UButton, {
-      icon: 'i-lucide-ellipsis-vertical',
-      color: 'neutral',
-      variant: 'ghost'
-    })))
+    {
+      accessorKey: 'createdBy',
+      header: ({ column }) => buildSortableHeader(UButton, column, '创建者')
+    },
+    {
+      accessorKey: 'fieldCount',
+      header: ({ column }) => buildSortableHeader(UButton, column, '字段数')
+    },
+    {
+      accessorKey: 'fieldsLabel',
+      header: ({ column }) => buildSortableHeader(UButton, column, '字段')
+    }
+  ]
+
+  if (!isAdmin.value) {
+    return baseColumns
   }
-]
+
+  return [
+    {
+      id: 'select',
+      header: ({ table }) => {
+        const pageRows = table.getPaginationRowModel().rows as Array<{
+          original: TableRow
+          getIsSelected: () => boolean
+          toggleSelected: (value: boolean) => void
+        }>
+        const selectableRows = pageRows.filter(row => row.original.id !== BASIC_INFO_TABLE_ID)
+        const allSelected = selectableRows.length > 0 && selectableRows.every(row => row.getIsSelected())
+        const someSelected = selectableRows.some(row => row.getIsSelected())
+
+        return h(UCheckbox, {
+          'modelValue': someSelected && !allSelected ? 'indeterminate' : allSelected,
+          'onUpdate:modelValue': (value: boolean | 'indeterminate') => {
+            selectableRows.forEach(row => row.toggleSelected(!!value))
+          },
+          'aria-label': 'Select all',
+          'class': 'align-middle'
+        })
+      },
+      cell: ({ row }) => h(UCheckbox, {
+        'modelValue': row.getIsSelected(),
+        'onUpdate:modelValue': (value: boolean | 'indeterminate') => row.toggleSelected(!!value),
+        'disabled': row.original.id === BASIC_INFO_TABLE_ID,
+        'aria-label': 'Select row',
+        'class': 'align-middle'
+      }),
+      enableHiding: false
+    },
+    ...baseColumns,
+    {
+      id: 'actions',
+      header: '',
+      meta: {
+        class: {
+          th: 'text-right',
+          td: 'text-right'
+        }
+      },
+      enableHiding: false,
+      cell: ({ row }) => h('div', { class: 'text-right' }, h(UDropdownMenu, {
+        items: getRowItems(row),
+        content: { align: 'end' }
+      }, () => h(UButton, {
+        icon: 'i-lucide-ellipsis-vertical',
+        color: 'neutral',
+        variant: 'ghost'
+      })))
+    }
+  ]
+})
 
 function resetForm() {
   designerState.tableName = ''
@@ -342,6 +394,11 @@ function resetForm() {
 function addField() {
   const label = designerState.fieldLabel.trim()
   if (!label) {
+    return
+  }
+
+  if (fields.value.some(field => field.label.trim() === label)) {
+    toast.add({ color: 'warning', title: '添加失败', description: '字段名不能重复' })
     return
   }
 
@@ -501,7 +558,9 @@ async function confirmDeleteTable() {
 }
 
 onMounted(() => {
-  startPolling()
+  if (isAdmin.value) {
+    startPolling()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -577,9 +636,10 @@ onBeforeUnmount(() => {
         />
 
         <div class="flex items-center justify-between gap-3 border-t border-default pt-4">
-          <div class="text-sm text-muted">
+          <div v-if="isAdmin" class="text-sm text-muted">
             {{ tableRef?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }} / {{ tableRef?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
           </div>
+          <div v-else />
           <UPagination
             :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
             :items-per-page="tableRef?.tableApi?.getState().pagination.pageSize"
@@ -600,7 +660,13 @@ onBeforeUnmount(() => {
             >
               <div class="flex flex-wrap gap-4">
                 <UFormField name="tableName" label="表名" class="w-full md:w-60">
-                  <UInput v-model="designerState.tableName" placeholder="请输入表名" class="w-full" />
+                  <UInput
+                    :model-value="designerState.tableName"
+                    placeholder="请输入表名"
+                    maxlength="10"
+                    class="w-full"
+                    @update:model-value="updateTableName"
+                  />
                 </UFormField>
 
                 <UFormField name="tableType" label="表类型" class="w-22">
@@ -617,7 +683,13 @@ onBeforeUnmount(() => {
 
               <div class="flex flex-wrap items-end gap-4">
                 <UFormField label="字段名" class="w-30">
-                  <UInput v-model="designerState.fieldLabel" placeholder="请输入字段名" class="w-full" />
+                  <UInput
+                    :model-value="designerState.fieldLabel"
+                    placeholder="请输入字段名"
+                    maxlength="10"
+                    class="w-full"
+                    @update:model-value="updateFieldLabel"
+                  />
                 </UFormField>
 
                 <UFormField label="字段类型" class="w-22">
@@ -636,10 +708,14 @@ onBeforeUnmount(() => {
 
                 <UFormField v-if="designerState.fieldType !== 'singleChoice' && designerState.fieldType !== 'date'" label="位数限制" class="w-20">
                   <UInput
-                    v-model.number="designerState.fieldLimit"
+                    :model-value="designerState.fieldLimit === undefined ? '' : String(designerState.fieldLimit)"
                     type="number"
+                    min="1"
+                    max="25"
+                    step="1"
                     placeholder="可选"
                     class="w-full"
+                    @update:model-value="updateFieldLimit"
                   />
                 </UFormField>
 
@@ -687,12 +763,24 @@ onBeforeUnmount(() => {
               @submit="submitTable"
             >
               <UFormField name="tableName" label="表名" class="w-full md:w-60">
-                <UInput v-model="designerState.tableName" placeholder="请输入新表名" class="w-full" />
+                <UInput
+                  :model-value="designerState.tableName"
+                  placeholder="请输入新表名"
+                  maxlength="10"
+                  class="w-full"
+                  @update:model-value="updateTableName"
+                />
               </UFormField>
 
               <div class="flex flex-wrap items-end gap-4">
                 <UFormField label="字段名" class="w-30">
-                  <UInput v-model="designerState.fieldLabel" placeholder="请输入字段名" class="w-full" />
+                  <UInput
+                    :model-value="designerState.fieldLabel"
+                    placeholder="请输入字段名"
+                    maxlength="10"
+                    class="w-full"
+                    @update:model-value="updateFieldLabel"
+                  />
                 </UFormField>
 
                 <UFormField label="字段类型" class="w-22">
@@ -711,10 +799,14 @@ onBeforeUnmount(() => {
 
                 <UFormField v-if="designerState.fieldType !== 'singleChoice' && designerState.fieldType !== 'date'" label="位数限制" class="w-22">
                   <UInput
-                    v-model.number="designerState.fieldLimit"
+                    :model-value="designerState.fieldLimit === undefined ? '' : String(designerState.fieldLimit)"
                     type="number"
+                    min="1"
+                    max="25"
+                    step="1"
                     placeholder="可选"
                     class="w-full"
+                    @update:model-value="updateFieldLimit"
                   />
                 </UFormField>
 

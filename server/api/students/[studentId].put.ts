@@ -17,6 +17,7 @@ interface UpdateBody {
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
+  const canManage = canManageAllStudents(user)
   const userId = getRouterParam(event, 'studentId')
 
   if (!userId) {
@@ -31,7 +32,7 @@ export default eventHandler(async (event) => {
   }
 
   const isSelf = user.userId === userId
-  if (!isSelf && !canManageAllStudents(user)) {
+  if (!isSelf && !canManage) {
     throw createError({ statusCode: 403, message: '无权限修改该学生信息' })
   }
 
@@ -50,6 +51,10 @@ export default eventHandler(async (event) => {
   const isCoreChanged = nextUserId !== undefined || nextName !== undefined || nextClassName !== undefined
   if (isCoreChanged && body.tableId !== BASIC_INFO_TABLE_ID) {
     throw createError({ statusCode: 400, message: '用户名/学号、姓名、班级仅允许在基本信息表修改' })
+  }
+
+  if (!canManage && body.tableId === BASIC_INFO_TABLE_ID && (nextUserId !== undefined || nextName !== undefined || nextClassName !== undefined)) {
+    throw createError({ statusCode: 403, message: '学生不可修改学号、姓名、班级字段' })
   }
 
   if (body.phone && !/^\d{11}$/.test(body.phone)) {
