@@ -7,7 +7,9 @@ import {
   createStudentProfile,
   findDynamicTableById,
   getStudentProfileByUserId,
-  updateStudentRecord
+  isStudentProfileFieldKey,
+  updateStudentRecord,
+  upsertDynamicFieldValues
 } from '../../utils/store'
 
 interface CreateBody {
@@ -16,11 +18,7 @@ interface CreateBody {
   name: string
   className?: string
   gender?: string
-  birthDate?: string
-  phone?: string
-  address?: string
-  guardianPhone?: string
-  major?: string
+  values?: Record<string, unknown>
 }
 
 export default eventHandler(async (event) => {
@@ -41,17 +39,13 @@ export default eventHandler(async (event) => {
   }
 
   const isBasicInfoTarget = !tableId || tableId === BASIC_INFO_TABLE_ID
+  const normalizedValues = Object.entries(body.values || {}).reduce((acc, [key, value]) => {
+    acc[key] = String(value ?? '')
+    return acc
+  }, {} as Record<string, string>)
 
   if (!userId || !name) {
     throw createError({ statusCode: 400, message: '用户名/学号、姓名不能为空' })
-  }
-
-  if (body.phone && !/^\d{11}$/.test(body.phone)) {
-    throw createError({ statusCode: 400, message: '手机号必须为11位数字' })
-  }
-
-  if (body.guardianPhone && !/^\d{11}$/.test(body.guardianPhone)) {
-    throw createError({ statusCode: 400, message: '监护人手机号必须为11位数字' })
   }
 
   const existing = await getStudentProfileByUserId(userId)
@@ -66,21 +60,11 @@ export default eventHandler(async (event) => {
       name,
       className: isBasicInfoTarget ? className || '' : '',
       gender: body.gender || '',
-      birthDate: body.birthDate || '',
-      phone: body.phone || '',
-      address: body.address || '',
-      guardianPhone: body.guardianPhone || '',
-      major: body.major || '',
       passwordHash: hashPassword('Stu1234567')
     })
   } else {
     result = await updateStudentRecord(userId, {
-      gender: body.gender,
-      birthDate: body.birthDate,
-      phone: body.phone,
-      address: body.address,
-      guardianPhone: body.guardianPhone,
-      major: body.major
+      gender: body.gender
     })
   }
 
@@ -91,6 +75,26 @@ export default eventHandler(async (event) => {
     }
   }
 
+  if (table && result) {
+    const dynamicValues = table.fields.reduce((acc, field) => {
+      if (isStudentProfileFieldKey(field.key)) {
+        return acc
+      }
+
+      if (Object.prototype.hasOwnProperty.call(normalizedValues, field.key)) {
+        acc[field.key] = String(normalizedValues[field.key] ?? '')
+      }
+
+      return acc
+    }, {} as Record<string, string>)
+
+    await upsertDynamicFieldValues({
+      tableId: table.id,
+      userId: result.userId,
+      values: dynamicValues
+    })
+  }
+
   await appendUserLog(user, 'create', 'students', `新增学生 ${userId}`)
 
   return result
@@ -99,11 +103,6 @@ export default eventHandler(async (event) => {
         name: result.name,
         className: result.className,
         gender: result.gender,
-        birthDate: result.birthDate,
-        phone: result.phone,
-        address: result.address,
-        guardianPhone: result.guardianPhone,
-        major: result.major,
         passwordHash: result.passwordHash
       }
     : result

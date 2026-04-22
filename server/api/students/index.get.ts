@@ -26,11 +26,6 @@ export default eventHandler(async (event) => {
     name: item.name,
     className: item.className,
     gender: item.gender,
-    birthDate: item.birthDate,
-    phone: item.phone,
-    address: item.address,
-    guardianPhone: item.guardianPhone,
-    major: item.major,
     passwordHash: item.passwordHash
   }))
 })

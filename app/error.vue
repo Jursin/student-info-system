@@ -7,7 +7,7 @@ defineProps<{
 
 useSeoMeta({
   title: '页面未找到',
-  description: '我们很抱歉，您访问的页面不存在。'
+  description: '您访问的页面不存在。'
 })
 
 useHead({
@@ -19,6 +19,15 @@ useHead({
 
 <template>
   <UApp>
-    <UError :error="error" />
+    <UError
+      :clear="{
+        label: '回到首页'
+      }"
+      :error="{
+        statusCode: 404,
+        statusMessage: '页面未找到',
+        message: '您访问的页面不存在。'
+      }"
+    />
   </UApp>
 </template>

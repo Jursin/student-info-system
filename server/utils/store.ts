@@ -21,11 +21,6 @@ export interface StudentProfile {
   name: string
   className: string
   gender: string
-  birthDate: string
-  phone: string
-  address: string
-  guardianPhone: string
-  major: string
   passwordHash: string
 }
 
@@ -63,6 +58,11 @@ export const BASIC_INFO_LOCKED_FIELDS: DynamicField[] = [
   { key: 'className', label: '班级', type: 'text' }
 ]
 export const SHARED_LOCKED_FIELD_KEYS = ['userId', 'name']
+export const STUDENT_PROFILE_FIELD_KEYS = ['userId', 'name', 'className', 'gender'] as const
+
+export function isStudentProfileFieldKey(key: string) {
+  return STUDENT_PROFILE_FIELD_KEYS.includes(key as typeof STUDENT_PROFILE_FIELD_KEYS[number])
+}
 
 const seedUsers: Array<{
   userId: string
@@ -144,7 +144,13 @@ export async function ensureSeedData(): Promise<void> {
       }
 
       for (const profile of seedProfiles) {
-        await tx.insert(schema.studentProfiles).values(profile)
+        await tx.insert(schema.studentProfiles).values({
+          userId: profile.userId,
+          name: profile.name,
+          className: profile.className,
+          gender: profile.gender,
+          passwordHash: profile.passwordHash
+        })
       }
 
       for (const table of seedTables) {
@@ -307,7 +313,13 @@ export async function createStudentProfile(profile: StudentProfile): Promise<Stu
   await ensureSeedData()
 
   return db.transaction(async (tx) => {
-    const [createdProfile] = await tx.insert(schema.studentProfiles).values(profile).returning()
+    const [createdProfile] = await tx.insert(schema.studentProfiles).values({
+      userId: profile.userId,
+      name: profile.name,
+      className: profile.className,
+      gender: profile.gender,
+      passwordHash: profile.passwordHash
+    }).returning()
     if (!createdProfile) throw new Error('Failed to create student profile')
 
     const [account] = await tx.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, profile.userId))
@@ -381,11 +393,6 @@ export async function updateStudentProfile(userId: string, body: Partial<Student
 
   const data: Partial<typeof schema.studentProfiles.$inferInsert> = {}
   if (body.gender !== undefined) data.gender = body.gender
-  if (body.birthDate !== undefined) data.birthDate = body.birthDate
-  if (body.phone !== undefined) data.phone = body.phone
-  if (body.address !== undefined) data.address = body.address
-  if (body.guardianPhone !== undefined) data.guardianPhone = body.guardianPhone
-  if (body.major !== undefined) data.major = body.major
   if (body.passwordHash !== undefined) data.passwordHash = body.passwordHash
 
   const [updated] = await db.update(schema.studentProfiles)
@@ -400,6 +407,7 @@ export async function deleteStudentProfile(userId: string): Promise<boolean> {
   await ensureSeedData()
 
   const result = await db.transaction(async (tx) => {
+    await tx.delete(schema.dynamicFieldValues).where(eq(schema.dynamicFieldValues.userId, userId))
     await tx.delete(schema.dynamicTableRows).where(eq(schema.dynamicTableRows.userId, userId))
     const res = await tx.delete(schema.studentProfiles).where(eq(schema.studentProfiles.userId, userId))
     return res.rowCount ?? 0
@@ -535,6 +543,19 @@ export async function updateDynamicTableById(id: string, params: {
           }))
         )
       }
+
+      const fieldKeys = params.fields
+        .map(field => normalizeDynamicFieldKeyToDb(field.key))
+      if (fieldKeys.length > 0) {
+        await tx.delete(schema.dynamicFieldValues)
+          .where(and(
+            eq(schema.dynamicFieldValues.tableId, id),
+            not(inArray(schema.dynamicFieldValues.fieldKey, fieldKeys))
+          ))
+      } else {
+        await tx.delete(schema.dynamicFieldValues)
+          .where(eq(schema.dynamicFieldValues.tableId, id))
+      }
     }
   })
 
@@ -545,6 +566,7 @@ export async function deleteDynamicTableById(id: string): Promise<boolean> {
   await ensureSeedData()
 
   const deleted = await db.transaction(async (tx) => {
+    await tx.delete(schema.dynamicFieldValues).where(eq(schema.dynamicFieldValues.tableId, id))
     await tx.delete(schema.dynamicTableRows).where(eq(schema.dynamicTableRows.tableId, id))
     await tx.delete(schema.dynamicFields).where(eq(schema.dynamicFields.tableId, id))
     const result = await tx.delete(schema.dynamicTables).where(eq(schema.dynamicTables.id, id))
@@ -576,6 +598,59 @@ export async function addStudentToDynamicTable(tableId: string, userId: string):
     .onConflictDoNothing({
       target: [schema.dynamicTableRows.tableId, schema.dynamicTableRows.userId]
     })
+}
+
+export async function listDynamicFieldValuesByTable(tableId: string, userIds?: string[]): Promise<Record<string, Record<string, string>>> {
+  await ensureSeedData()
+
+  const filters = [eq(schema.dynamicFieldValues.tableId, tableId)]
+  if (userIds?.length) {
+    filters.push(inArray(schema.dynamicFieldValues.userId, userIds))
+  }
+
+  const rows = await db.select({
+    userId: schema.dynamicFieldValues.userId,
+    fieldKey: schema.dynamicFieldValues.fieldKey,
+    value: schema.dynamicFieldValues.value
+  })
+    .from(schema.dynamicFieldValues)
+    .where(and(...filters))
+
+  return rows.reduce((acc, item) => {
+    const current = acc[item.userId] || {}
+    current[item.fieldKey] = item.value
+    acc[item.userId] = current
+    return acc
+  }, {} as Record<string, Record<string, string>>)
+}
+
+export async function upsertDynamicFieldValues(params: {
+  tableId: string
+  userId: string
+  values: Record<string, string>
+}): Promise<void> {
+  await ensureSeedData()
+
+  const entries = Object.entries(params.values)
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.dynamicFieldValues)
+      .where(and(
+        eq(schema.dynamicFieldValues.tableId, params.tableId),
+        eq(schema.dynamicFieldValues.userId, params.userId)
+      ))
+
+    if (!entries.length) {
+      return
+    }
+
+    await tx.insert(schema.dynamicFieldValues)
+      .values(entries.map(([fieldKey, value]) => ({
+        tableId: params.tableId,
+        userId: params.userId,
+        fieldKey,
+        value
+      })))
+  })
 }
 
 export async function createOperationLog(params: {
@@ -831,11 +906,6 @@ export async function updateStudentRecord(userId: string, body: {
   name?: string
   className?: string
   gender?: string
-  birthDate?: string
-  phone?: string
-  address?: string
-  guardianPhone?: string
-  major?: string
 }): Promise<StudentProfile | null> {
   await ensureSeedData()
 
@@ -852,25 +922,51 @@ export async function updateStudentRecord(userId: string, body: {
     if (exists) {
       throw createError({ statusCode: 400, message: '学号已存在' })
     }
+
+    const [accountExists] = await db.select().from(schema.userAccounts).where(eq(schema.userAccounts.userId, targetUserId))
+    if (accountExists) {
+      throw createError({ statusCode: 400, message: '学号已存在' })
+    }
   }
 
   await db.transaction(async (tx) => {
     if (account) {
-      const accountData: Partial<typeof schema.userAccounts.$inferInsert> = {
-        userId: targetUserId
-      }
-      if (body.name !== undefined) accountData.name = body.name
-      if (body.className !== undefined) accountData.className = body.className
+      if (targetUserId !== userId) {
+        await tx.insert(schema.userAccounts)
+          .values({
+            userId: targetUserId,
+            name: body.name !== undefined ? body.name : account.name,
+            className: body.className !== undefined ? body.className : account.className,
+            role: account.role,
+            passwordHash: account.passwordHash,
+            failedAttempts: account.failedAttempts,
+            lockUntil: account.lockUntil
+          })
+      } else {
+        const accountData: Partial<typeof schema.userAccounts.$inferInsert> = {}
+        if (body.name !== undefined) accountData.name = body.name
+        if (body.className !== undefined) accountData.className = body.className
 
-      await tx.update(schema.userAccounts)
-        .set(accountData)
-        .where(eq(schema.userAccounts.userId, userId))
+        if (Object.keys(accountData).length > 0) {
+          await tx.update(schema.userAccounts)
+            .set(accountData)
+            .where(eq(schema.userAccounts.userId, userId))
+        }
+      }
     }
 
     if (targetUserId !== userId) {
       await tx.update(schema.sessionTokens)
         .set({ userId: targetUserId })
         .where(eq(schema.sessionTokens.userId, userId))
+
+      await tx.update(schema.dynamicTableRows)
+        .set({ userId: targetUserId })
+        .where(eq(schema.dynamicTableRows.userId, userId))
+
+      await tx.update(schema.dynamicFieldValues)
+        .set({ userId: targetUserId })
+        .where(eq(schema.dynamicFieldValues.userId, userId))
     }
 
     const profileData: Partial<typeof schema.studentProfiles.$inferInsert> = {
@@ -879,15 +975,15 @@ export async function updateStudentRecord(userId: string, body: {
     if (body.name !== undefined) profileData.name = body.name
     if (body.className !== undefined) profileData.className = body.className
     if (body.gender !== undefined) profileData.gender = body.gender
-    if (body.birthDate !== undefined) profileData.birthDate = body.birthDate
-    if (body.phone !== undefined) profileData.phone = body.phone
-    if (body.address !== undefined) profileData.address = body.address
-    if (body.guardianPhone !== undefined) profileData.guardianPhone = body.guardianPhone
-    if (body.major !== undefined) profileData.major = body.major
 
     await tx.update(schema.studentProfiles)
       .set(profileData)
       .where(eq(schema.studentProfiles.userId, userId))
+
+    if (account && targetUserId !== userId) {
+      await tx.delete(schema.userAccounts)
+        .where(eq(schema.userAccounts.userId, userId))
+    }
   })
 
   const [updated] = await db.select().from(schema.studentProfiles).where(eq(schema.studentProfiles.userId, targetUserId))

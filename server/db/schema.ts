@@ -25,11 +25,6 @@ export const studentProfiles = pgTable('student_profiles', {
   name: text('name').notNull(),
   className: text('class_name').notNull(),
   gender: text('gender').notNull(),
-  birthDate: text('birth_date').notNull(),
-  phone: text('phone').notNull(),
-  address: text('address').notNull(),
-  guardianPhone: text('guardian_phone').notNull(),
-  major: text('major').notNull(),
   passwordHash: text('password_hash').notNull()
 })
 
@@ -83,6 +78,28 @@ export const dynamicTableRows = pgTable('dynamic_table_rows', {
 export const dynamicTableRowsRelations = relations(dynamicTableRows, ({ one }) => ({
   table: one(dynamicTables, {
     fields: [dynamicTableRows.tableId],
+    references: [dynamicTables.id]
+  })
+}))
+
+export const dynamicFieldValues = pgTable('dynamic_field_values', {
+  id: serial('id').primaryKey(),
+  tableId: text('table_id').references(() => dynamicTables.id, {
+    onDelete: 'cascade',
+    onUpdate: 'cascade'
+  }).notNull(),
+  userId: text('user_id').notNull(),
+  fieldKey: text('field_key').notNull(),
+  value: text('value').notNull().default('')
+}, table => [
+  unique('dynamic_field_values_table_user_field_unique').on(table.tableId, table.userId, table.fieldKey),
+  index('dynamic_field_values_table_user_idx').on(table.tableId, table.userId),
+  index('dynamic_field_values_user_idx').on(table.userId)
+])
+
+export const dynamicFieldValuesRelations = relations(dynamicFieldValues, ({ one }) => ({
+  table: one(dynamicTables, {
+    fields: [dynamicFieldValues.tableId],
     references: [dynamicTables.id]
   })
 }))

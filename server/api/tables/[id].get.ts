@@ -1,5 +1,12 @@
 import { appendUserLog, requireSessionUser } from '../../utils/auth'
-import { BASIC_INFO_TABLE_ID, listDynamicTableUserIds, listDynamicTables, listStudentProfiles } from '../../utils/store'
+import {
+  BASIC_INFO_TABLE_ID,
+  isStudentProfileFieldKey,
+  listDynamicFieldValuesByTable,
+  listDynamicTableUserIds,
+  listDynamicTables,
+  listStudentProfiles
+} from '../../utils/store'
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
@@ -29,14 +36,18 @@ export default eventHandler(async (event) => {
     profiles = profiles.filter(item => item.className === user.className)
   }
 
+  const userIds = profiles.map(profile => profile.userId)
+  const dynamicValuesByUserId = await listDynamicFieldValuesByTable(table.id, userIds)
+
   const rows = profiles.map((profile) => {
     const record: Record<string, string> = {}
     const profileRecord = profile as unknown as Record<string, unknown>
+    const dynamicValues = dynamicValuesByUserId[profile.userId] || {}
 
     for (const field of table.fields) {
-      const value = field.key === 'userId'
-        ? profile.userId
-        : profileRecord[field.key]
+      const value = isStudentProfileFieldKey(field.key)
+        ? (field.key === 'userId' ? profile.userId : profileRecord[field.key])
+        : dynamicValues[field.key]
       record[field.key] = value === undefined || value === null ? '' : String(value)
     }
 

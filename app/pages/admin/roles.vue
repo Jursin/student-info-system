@@ -136,6 +136,29 @@ function canManageRoleRow(row: RoleUser) {
   return true
 }
 
+function getSelectableRoleRows(rows: RolesTableRow[]) {
+  return rows.filter(row => row.original.role !== 'superAdmin')
+}
+
+function getNextRoleRowSelection(pageRows: RolesTableRow[], checked: boolean) {
+  const selectableRows = getSelectableRoleRows(pageRows)
+  const selectableRowIds = new Set(selectableRows.map(row => row.id))
+  const currentSelection = rowSelection.value as Record<string, boolean>
+
+  if (checked) {
+    const nextSelection: Record<string, boolean> = { ...currentSelection }
+    for (const row of selectableRows) {
+      nextSelection[row.id] = true
+    }
+
+    return nextSelection
+  }
+
+  return Object.fromEntries(
+    Object.entries(currentSelection).filter(([rowId]) => !selectableRowIds.has(rowId))
+  ) as Record<string, boolean>
+}
+
 const selectedActionableRows = computed(() => {
   const rows = tableRef.value?.tableApi?.getFilteredSelectedRowModel().rows || []
   return rows.filter(row => canManageRoleRow(row.original))
@@ -162,28 +185,14 @@ const columns: TableColumn<RoleUser>[] = [
     id: 'select',
     header: ({ table }) => {
       const pageRows = table.getPaginationRowModel().rows as RolesTableRow[]
-      const selectableRows = pageRows.filter(row => row.original.role !== 'superAdmin')
+      const selectableRows = getSelectableRoleRows(pageRows)
       const allSelected = selectableRows.length > 0 && selectableRows.every(row => row.getIsSelected())
       const someSelected = selectableRows.some(row => row.getIsSelected())
 
       return h(UCheckbox, {
         'modelValue': someSelected && !allSelected ? 'indeterminate' : allSelected,
         'onUpdate:modelValue': () => {
-          const nextSelected = !allSelected
-          const currentSelection = rowSelection.value as Record<string, boolean>
-          const nextRowSelection: Record<string, boolean> = nextSelected
-            ? { ...currentSelection }
-            : Object.fromEntries(
-                Object.entries(currentSelection).filter(([key]) => !selectableRows.some(row => row.id === key))
-              )
-
-          for (const row of selectableRows) {
-            if (nextSelected) {
-              nextRowSelection[row.id] = true
-            }
-          }
-
-          rowSelection.value = nextRowSelection
+          rowSelection.value = getNextRoleRowSelection(pageRows, !allSelected)
         },
         'aria-label': 'Select all',
         'class': 'align-middle'
@@ -643,7 +652,7 @@ async function submitRoleForm() {
             class="max-w-sm"
           />
 
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <UButton
               v-if="isAdmin && selectedActionableCount > 0"
               color="error"
@@ -651,7 +660,7 @@ async function submitRoleForm() {
               icon="i-lucide-trash"
               @click="requestDeleteSelectedUsers"
             >
-              批量删除
+              删除
               <template #trailing>
                 <UKbd>
                   {{ selectedActionableCount }}
@@ -666,7 +675,7 @@ async function submitRoleForm() {
               icon="i-lucide-key-round"
               @click="requestResetSelectedUsers"
             >
-              批量重置密码
+              重置密码
               <template #trailing>
                 <UKbd>
                   {{ selectedActionableCount }}

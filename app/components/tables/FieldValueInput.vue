@@ -20,12 +20,30 @@ const selectItems = computed(() => (props.field.options || []).map(option => ({
   value: option
 })))
 
+const fieldLimit = computed(() => props.field.limit || 25)
+
+function sanitizeValue(value: string) {
+  if (props.field.type === 'number') {
+    return value.replace(/\D+/g, '').slice(0, fieldLimit.value)
+  }
+
+  if (props.field.type === 'chinese') {
+    return value.replace(/[^\u4e00-\u9fa5]/g, '').slice(0, fieldLimit.value)
+  }
+
+  if (props.field.type === 'date') {
+    return value.slice(0, 10)
+  }
+
+  return value.slice(0, fieldLimit.value)
+}
+
 function updateValue(value: unknown) {
-  emit('update:modelValue', String(value ?? ''))
+  emit('update:modelValue', sanitizeValue(String(value ?? '')))
 }
 
 function updateDateValue(value: unknown) {
-  emit('update:modelValue', fromDateValue((value ?? null) as { year: number, month: number, day: number } | null))
+  emit('update:modelValue', sanitizeValue(fromDateValue((value ?? null) as { year: number, month: number, day: number } | null)))
 }
 </script>
 
@@ -51,8 +69,10 @@ function updateDateValue(value: unknown) {
   <UInput
     v-else-if="field.type === 'number'"
     :model-value="modelValue"
+    type="text"
     inputmode="numeric"
     pattern="[0-9]*"
+    :maxlength="fieldLimit"
     :disabled="disabled"
     class="w-full"
     @update:model-value="updateValue"
@@ -62,6 +82,7 @@ function updateDateValue(value: unknown) {
     v-else
     :model-value="modelValue"
     type="text"
+    :maxlength="fieldLimit"
     :disabled="disabled"
     class="w-full"
     @update:model-value="updateValue"

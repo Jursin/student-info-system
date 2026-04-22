@@ -12,11 +12,6 @@ export interface StudentProfile {
   name: string
   className: string
   gender: string
-  birthDate: string
-  phone: string
-  address: string
-  guardianPhone: string
-  major: string
   passwordHash: string
 }
 

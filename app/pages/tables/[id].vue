@@ -44,7 +44,7 @@ const actionConfirmType = ref<'delete' | 'reset'>('delete')
 const actionConfirmIds = ref<string[]>([])
 const actionConfirmNames = ref<string[]>([])
 const exportOpen = ref(false)
-const exportAllRows = ref<Array<{ userId: string, name: string }>>([])
+const exportAllRows = ref<RowRecord[]>([])
 const exportMissingRows = ref<Array<{ userId: string, name: string }>>([])
 const exportTimestamp = ref('')
 const exportOnlyMissing = ref(false)
@@ -138,15 +138,8 @@ const filteredRows = computed(() => {
   return tableData.value.rows.filter(row => Object.values(row).some(value => String(value).toLowerCase().includes(keyword)))
 })
 
-const studentEditableFields = new Set([
-  'className',
-  'gender',
-  'birthDate',
-  'phone',
-  'address',
-  'guardianPhone',
-  'major'
-])
+const coreFieldKeys = new Set(['userId', 'name', 'className'])
+const profileFieldKeys = new Set(['userId', 'name', 'className', 'gender'])
 
 const studentFormState = ref<Record<string, string>>({})
 const studentSubmitting = ref(false)
@@ -169,25 +162,59 @@ watch(
 )
 
 function isStudentReadonlyField(key: string) {
-  return key === 'userId' || key === 'name' || (isBasicInfoTable.value && key === 'className')
+  return coreFieldKeys.has(key)
 }
 
 function getFieldLimit(field: DynamicTable['fields'][number]) {
   return field.limit || 25
 }
 
-function updateStudentFieldValue(field: DynamicTable['fields'][number], value: string) {
+function normalizeFieldValue(field: DynamicTable['fields'][number], value: string) {
+  const limit = getFieldLimit(field)
   if (field.type === 'number') {
-    studentFormState.value[field.key] = value.replace(/\D+/g, '').slice(0, getFieldLimit(field))
-    return
+    return value.replace(/\D+/g, '').slice(0, limit)
   }
 
   if (field.type === 'chinese') {
-    studentFormState.value[field.key] = value.replace(/[^\u4e00-\u9fa5]/g, '').slice(0, getFieldLimit(field))
-    return
+    return value.replace(/[^\u4e00-\u9fa5]/g, '').slice(0, limit)
   }
 
-  studentFormState.value[field.key] = value.slice(0, getFieldLimit(field))
+  if (field.type === 'date') {
+    return value.slice(0, 10)
+  }
+
+  return value.slice(0, limit)
+}
+
+function buildFieldValues(state: Record<string, string>, options?: { includeCoreFields?: boolean }) {
+  const includeCoreFields = options?.includeCoreFields ?? false
+
+  return tableData.value.table.fields
+    .filter(field => field.key !== 'password' && (includeCoreFields || !coreFieldKeys.has(field.key)))
+    .reduce((acc, field) => {
+      acc[field.key] = normalizeFieldValue(field, String(state[field.key] ?? ''))
+      return acc
+    }, {} as Record<string, string>)
+}
+
+function buildStudentPayload(state: Record<string, string>, options?: { includeCoreFields?: boolean }) {
+  const values = buildFieldValues(state, options)
+  const payload: Record<string, unknown> = {
+    tableId: tableId.value,
+    values
+  }
+
+  for (const [key, value] of Object.entries(values)) {
+    if (profileFieldKeys.has(key)) {
+      payload[key] = value
+    }
+  }
+
+  return payload
+}
+
+function updateStudentFieldValue(field: DynamicTable['fields'][number], value: string) {
+  studentFormState.value[field.key] = normalizeFieldValue(field, value)
 }
 
 async function submitStudentDetailForm() {
@@ -197,16 +224,7 @@ async function submitStudentDetailForm() {
     return
   }
 
-  const body: Record<string, string> = { tableId: tableId.value }
-  for (const key of studentEditableFields) {
-    if (isBasicInfoTable.value && key === 'className') {
-      continue
-    }
-
-    if (studentFormState.value[key] !== undefined) {
-      body[key] = String(studentFormState.value[key] || '')
-    }
-  }
+  const body = buildStudentPayload(studentFormState.value)
 
   studentSubmitting.value = true
   try {
@@ -242,7 +260,7 @@ const actionConfirmDescription = computed(() => {
     : `即将重置学生 ${actionConfirmIds.value[0] || ''} 的密码为默认值 Stu1234567，是否继续？`
 })
 
-const exportRows = computed(() => exportOnlyMissing.value ? exportMissingRows.value : exportAllRows.value)
+const exportFields = computed(() => tableData.value.table.fields.filter(field => field.key !== 'password'))
 const isExportOnlyMissingForced = computed(() => isClassLeader.value)
 const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024
 
@@ -251,35 +269,7 @@ function createEmptyFormState() {
 }
 
 function updateEditorFieldValue(field: DynamicTable['fields'][number], value: string) {
-  if (field.type === 'number') {
-    formState.value[field.key] = value.replace(/\D+/g, '').slice(0, getFieldLimit(field))
-    return
-  }
-
-  if (field.type === 'singleChoice') {
-    formState.value[field.key] = value.slice(0, getFieldLimit(field))
-    return
-  }
-
-  formState.value[field.key] = value
-}
-
-function toStudentPayload(row: Record<string, string>) {
-  const userId = String(row.userId ?? '').trim()
-  const name = String(row.name ?? '').trim()
-  const className = String(row.className ?? '').trim()
-
-  return {
-    userId,
-    name,
-    className,
-    gender: String(row.gender ?? ''),
-    birthDate: String(row.birthDate ?? ''),
-    phone: String(row.phone ?? ''),
-    address: String(row.address ?? ''),
-    guardianPhone: String(row.guardianPhone ?? ''),
-    major: String(row.major ?? '')
-  }
+  formState.value[field.key] = normalizeFieldValue(field, value)
 }
 
 function openAddModal() {
@@ -314,21 +304,18 @@ const formPanelOpen = computed({
 const isEditingForm = computed(() => editOpen.value)
 const formPanelTitle = computed(() => isEditingForm.value ? '修改信息' : '添加信息')
 const formPanelId = computed(() => isEditingForm.value ? 'edit-row-form' : 'add-row-form')
-const isCoreField = (key: string) => ['userId', 'name'].includes(key)
+const isCoreField = (key: string) => coreFieldKeys.has(key)
 const isFieldReadonlyInEdit = (key: string) => {
   if (!isEditingForm.value) {
     return false
   }
 
   if (isAdmin.value) {
-    return !isBasicInfoTable.value && isCoreField(key)
+    return !isBasicInfoTable.value && coreFieldKeys.has(key)
   }
 
   if (isClassLeader.value) {
-    if (isBasicInfoTable.value) {
-      return key === 'userId' || key === 'name' || key === 'className'
-    }
-    return key === 'userId' || key === 'name'
+    return coreFieldKeys.has(key)
   }
 
   return true
@@ -361,10 +348,7 @@ async function addRow() {
   try {
     await $fetch('/api/students', {
       method: 'POST',
-      body: {
-        ...toStudentPayload(formState.value),
-        tableId: tableId.value
-      }
+      body: buildStudentPayload(formState.value, { includeCoreFields: true })
     })
     toast.add({ title: '添加成功' })
     addOpen.value = false
@@ -390,10 +374,7 @@ async function updateRow() {
   try {
     await $fetch(`/api/students/${editingUserId.value}`, {
       method: 'PUT',
-      body: {
-        ...toStudentPayload(formState.value),
-        tableId: tableId.value
-      }
+      body: buildStudentPayload(formState.value, { includeCoreFields: isBasicInfoTable.value })
     })
     toast.add({ title: '修改成功' })
     editOpen.value = false
@@ -600,6 +581,18 @@ function buildExportFileNameBase() {
   return `${tableName}_${timestamp}`
 }
 
+function buildExportHeaders() {
+  return exportFields.value.map(field => field.label)
+}
+
+function buildExportValueRows(rows: RowRecord[]) {
+  return rows.map(row => exportFields.value.map(field => String(row[field.key] ?? '')))
+}
+
+function buildExportMissingRows(rows: Array<{ userId: string, name: string }>) {
+  return rows.map(row => [row.userId, row.name])
+}
+
 function buildTemplateFileName() {
   const tableName = sanitizeFileNameSegment(tableData.value.table.name || '信息表') || '信息表'
   return `${tableName}_导入模板.xlsx`
@@ -612,10 +605,7 @@ function requestExportSelectedRows() {
     return
   }
 
-  exportAllRows.value = selectedRows.map(row => ({
-    userId: String(row.original.userId || ''),
-    name: String(row.original.name || '')
-  }))
+  exportAllRows.value = selectedRows.map(row => ({ ...row.original }))
   exportMissingRows.value = pickRowsWithMissingValues(selectedRows.map(row => row.original))
   exportOnlyMissing.value = isExportOnlyMissingForced.value
   exportTimestamp.value = formatEast8Timestamp()
@@ -645,7 +635,7 @@ function getExpectedImportHeaders() {
 }
 
 function normalizeHeaderText(value: unknown) {
-  return String(value ?? '').trim()
+  return String(value ?? '').replace(/^\uFEFF/, '').trim()
 }
 
 function parseImportRows(file: File) {
@@ -689,11 +679,21 @@ function parseImportRows(file: File) {
         }
 
         const actualHeaders = Object.keys(rawRows[0] || {}).map(normalizeHeaderText)
-        if (!actualHeaders.length || actualHeaders.some(header => !headerMap.has(header.toLowerCase()))) {
+        const actualFieldKeys = new Set<string>()
+
+        for (const header of actualHeaders) {
+          const fieldKey = headerMap.get(header.toLowerCase())
+          if (!fieldKey) {
+            throw new Error('表头不对应，请使用模板文件后再导入')
+          }
+          actualFieldKeys.add(fieldKey)
+        }
+
+        if (!actualHeaders.length) {
           throw new Error('表头不对应，请使用模板文件后再导入')
         }
 
-        if (actualHeaders.length !== expectedHeaders.length) {
+        if (actualFieldKeys.size !== expectedHeaders.length) {
           throw new Error('表头不对应，请使用模板文件后再导入')
         }
 
@@ -750,22 +750,20 @@ async function importRows(rows: RowRecord[]) {
         continue
       }
 
-      const payload = {
-        ...toStudentPayload(row),
-        tableId: tableId.value
-      }
+      const updatePayload = buildStudentPayload(row, { includeCoreFields: isBasicInfoTable.value })
+      const createPayload = buildStudentPayload(row, { includeCoreFields: true })
 
       try {
         await $fetch(`/api/students/${encodeURIComponent(userId)}`, {
           method: 'PUT',
-          body: payload
+          body: updatePayload
         })
         successCount += 1
       } catch {
         try {
           await $fetch('/api/students', {
             method: 'POST',
-            body: payload
+            body: createPayload
           })
           successCount += 1
         } catch {
@@ -860,10 +858,15 @@ function downloadMissingMembersCsv() {
     return
   }
 
-  const lines = [
-    ['学号', '姓名'].map(escapeCsvValue).join(','),
-    ...exportRows.value.map(row => [row.userId, row.name].map(escapeCsvValue).join(','))
-  ]
+  const lines = exportOnlyMissing.value
+    ? [
+        ['学号', '姓名'].map(escapeCsvValue).join(','),
+        ...buildExportMissingRows(exportMissingRows.value).map(row => row.map(escapeCsvValue).join(','))
+      ]
+    : [
+        buildExportHeaders().map(escapeCsvValue).join(','),
+        ...buildExportValueRows(exportAllRows.value).map(row => row.map(escapeCsvValue).join(','))
+      ]
 
   const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' })
   triggerDownload(`${buildExportFileNameBase()}.csv`, blob)
@@ -876,10 +879,17 @@ function downloadMissingMembersExcel() {
   }
 
   const workbook = XLSX.utils.book_new()
-  const worksheet = XLSX.utils.aoa_to_sheet([
-    ['学号', '姓名'],
-    ...exportRows.value.map(row => [row.userId, row.name])
-  ])
+  const worksheet = XLSX.utils.aoa_to_sheet(
+    exportOnlyMissing.value
+      ? [
+          ['学号', '姓名'],
+          ...buildExportMissingRows(exportMissingRows.value)
+        ]
+      : [
+          buildExportHeaders(),
+          ...buildExportValueRows(exportAllRows.value)
+        ]
+  )
 
   XLSX.utils.book_append_sheet(workbook, worksheet, '空值成员名单')
   const xlsxArray = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
@@ -1064,7 +1074,7 @@ onBeforeUnmount(() => {
             class="max-w-sm"
           />
 
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <UBadge
               v-if="!isBasicInfoTable"
               icon="i-lucide-chart-bar"
@@ -1273,7 +1283,7 @@ onBeforeUnmount(() => {
                 :disabled="isExportOnlyMissingForced"
               />
               <p class="text-sm text-muted">
-                {{ exportOnlyMissing ? `当前有 ${exportRows.length} 名未填完成员可导出` : `当前有 ${exportRows.length} 名已选成员可导出` }}
+                {{ exportOnlyMissing ? `当前有 ${exportMissingRows.length} 名未填完成员可导出` : `当前有 ${exportAllRows.length} 名已选成员可导出` }}
               </p>
             </div>
           </template>

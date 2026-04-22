@@ -601,7 +601,7 @@ onBeforeUnmount(() => {
               icon="i-lucide-trash"
               @click="requestDeleteSelectedTables"
             >
-              批量删除
+              删除
               <template #trailing>
                 <UKbd>
                   {{ tableRef?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }}
