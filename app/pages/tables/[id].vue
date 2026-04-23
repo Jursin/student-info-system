@@ -4,6 +4,7 @@ import { getPaginationRowModel, type Row, type SortingState } from '@tanstack/ta
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import * as XLSX from 'xlsx'
 import type { DynamicTable } from '~/types'
+import { getRequestErrorMessage } from '~/utils/error'
 import { buildSortableHeader } from '~/utils/table'
 
 const UCheckbox = resolveComponent('UCheckbox')
@@ -235,7 +236,7 @@ async function submitStudentDetailForm() {
     toast.add({ title: '保存成功' })
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '保存失败', description })
   } finally {
     studentSubmitting.value = false
@@ -256,8 +257,8 @@ const actionConfirmDescription = computed(() => {
   }
 
   return count > 1
-    ? `即将重置 ${count} 名学生的密码为默认值 Stu1234567，是否继续？`
-    : `即将重置学生 ${actionConfirmIds.value[0] || ''} 的密码为默认值 Stu1234567，是否继续？`
+    ? `即将重置 ${count} 名学生的密码，是否继续？`
+    : `即将重置学生 ${actionConfirmIds.value[0] || ''} 的密码，是否继续？`
 })
 
 const exportFields = computed(() => tableData.value.table.fields.filter(field => field.key !== 'password'))
@@ -354,7 +355,7 @@ async function addRow() {
     addOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '添加失败', description })
   } finally {
     submitting.value = false
@@ -380,7 +381,7 @@ async function updateRow() {
     editOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '修改失败', description })
   } finally {
     submitting.value = false
@@ -419,7 +420,7 @@ async function performDeleteRows(ids: string[]) {
 
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '删除失败', description })
   } finally {
     deletingIds.value = []
@@ -441,15 +442,15 @@ async function performResetPasswords(ids: string[]) {
     }
 
     if (ids.length > 1) {
-      toast.add({ title: `已批量重置 ${ids.length} 名学生密码为默认值 Stu1234567` })
+      toast.add({ title: `已批量重置 ${ids.length} 名学生密码` })
     } else {
-      toast.add({ title: `已重置 ${ids[0] || ''} 的密码为默认值 Stu1234567` })
+      toast.add({ title: `已重置 ${ids[0] || ''} 的密码` })
     }
 
     editOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '重置密码失败', description })
   } finally {
     submitting.value = false
@@ -515,22 +516,6 @@ async function confirmAction() {
   } finally {
     actionConfirmLoading.value = false
   }
-}
-
-async function deleteRow(userId: string, name: string) {
-  requestDeleteRows([userId], [name])
-}
-
-async function deleteSelectedRows() {
-  requestDeleteSelectedRows()
-}
-
-async function resetPassword() {
-  requestResetPassword()
-}
-
-async function resetSelectedPasswords() {
-  requestResetSelectedPasswords()
 }
 
 function pickRowsWithMissingValues(rows: RowRecord[]) {
@@ -812,7 +797,7 @@ async function onImportFileChange(event: Event) {
     const rows = await parseImportRows(file)
     await importRows(rows)
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '请检查文件格式后重试'
+    const message = error instanceof Error ? error.message : getRequestErrorMessage(error, '请检查文件格式后重试')
     toast.add({ color: 'error', title: '导入失败', description: message })
   }
 }
@@ -912,7 +897,10 @@ function getRowItems(row: Row<RowRecord>) {
       label: '删除',
       icon: 'i-lucide-trash',
       color: 'error',
-      onSelect: () => deleteRow(String(row.original.userId || ''), String(row.original.name || ''))
+      onSelect: () => requestDeleteRows(
+        [String(row.original.userId || '')],
+        [String(row.original.name || '')]
+      )
     })
   } else if (isClassLeader.value && String(row.original.userId || '') === user.value?.userId) {
     items.push({
@@ -1090,7 +1078,7 @@ onBeforeUnmount(() => {
               color="error"
               variant="subtle"
               icon="i-lucide-trash"
-              @click="deleteSelectedRows"
+              @click="requestDeleteSelectedRows"
             >
               删除
               <template #trailing>
@@ -1106,7 +1094,7 @@ onBeforeUnmount(() => {
               variant="subtle"
               icon="i-lucide-key-round"
               :loading="submitting"
-              @click="resetSelectedPasswords"
+              @click="requestResetSelectedPasswords"
             >
               重置密码
               <template #trailing>
@@ -1229,7 +1217,7 @@ onBeforeUnmount(() => {
                   color="primary"
                   variant="subtle"
                   :loading="submitting"
-                  @click="resetPassword"
+                  @click="requestResetPassword"
                 >
                   重置密码
                 </UButton>

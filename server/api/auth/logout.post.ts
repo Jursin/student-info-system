@@ -1,4 +1,4 @@
-import { appendUserLog, invalidateSessionToken, requireSessionUser } from '../../utils/auth'
+import { appendUserLog, getSessionCookieOptions, invalidateSessionToken, requireSessionUser } from '../../utils/auth'
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
@@ -8,7 +8,7 @@ export default eventHandler(async (event) => {
     await invalidateSessionToken(token)
   }
 
-  deleteCookie(event, 'sis_session', { path: '/' })
+  deleteCookie(event, 'sis_session', getSessionCookieOptions())
 
   await appendUserLog(user, 'logout', 'auth', '用户退出系统')
 

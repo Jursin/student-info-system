@@ -1,10 +1,8 @@
 import { isSuperAdmin } from '../../../../../utils/access'
 import { appendUserLog, requireSessionUser } from '../../../../../utils/auth'
+import { getAdminDefaultPassword, getStudentDefaultPassword } from '../../../../../utils/password-config'
 import { hashPassword } from '../../../../../utils/security'
 import { findUserByUserId, updateUserAuthState } from '../../../../../utils/store'
-
-const ADMIN_DEFAULT_PASSWORD = 'Admin12345'
-const CLASS_LEADER_DEFAULT_PASSWORD = 'Stu1234567'
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
@@ -31,8 +29,8 @@ export default eventHandler(async (event) => {
   }
 
   const defaultPassword = current.role === 'admin'
-    ? ADMIN_DEFAULT_PASSWORD
-    : CLASS_LEADER_DEFAULT_PASSWORD
+    ? getAdminDefaultPassword()
+    : getStudentDefaultPassword()
 
   await updateUserAuthState({
     userId,
@@ -41,5 +39,5 @@ export default eventHandler(async (event) => {
 
   await appendUserLog(user, 'update', 'roles', `重置角色用户 ${userId} 的密码为默认值`)
 
-  return { success: true, defaultPassword }
+  return { success: true }
 })

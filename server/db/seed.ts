@@ -1,26 +1,21 @@
-import { randomBytes, scryptSync } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { db } from '../utils/drizzle'
+import { getBootstrapSuperAdminPassword } from '../utils/password-config'
+import { hashPassword } from '../utils/security'
 import * as schema from './schema'
 
-function hashPassword(password: string) {
-  const salt = randomBytes(16).toString('hex')
-  const digest = scryptSync(password, salt, 64).toString('hex')
-  return `${salt}:${digest}`
-}
-
 async function main() {
+  const bootstrapSuperAdminPassword = getBootstrapSuperAdminPassword()
+
   const users = [
     {
       userId: 'superadmin',
       name: '超级管理员',
       className: '',
       role: 'superAdmin' as const,
-      passwordHash: hashPassword('SuAdmin123')
+      passwordHash: hashPassword(bootstrapSuperAdminPassword)
     }
   ]
-
-  const profiles: (typeof schema.studentProfiles.$inferInsert)[] = []
 
   const dynamicTables = [
     {
@@ -58,15 +53,6 @@ async function main() {
           failedAttempts: 0,
           lockUntil: null
         }
-      })
-  }
-
-  for (const profile of profiles) {
-    await db.insert(schema.studentProfiles)
-      .values(profile)
-      .onConflictDoUpdate({
-        target: schema.studentProfiles.userId,
-        set: profile
       })
   }
 
@@ -110,7 +96,4 @@ main()
   .catch((error) => {
     console.error(error)
     process.exit(1)
-  })
-  .finally(async () => {
-    // Pool will be closed when the process exits
   })

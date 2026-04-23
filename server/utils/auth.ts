@@ -2,6 +2,30 @@ import type { H3Event } from 'h3'
 import type { UserAccount } from './store'
 import { createOperationLog, deleteSessionToken, findSessionUserByToken } from './store'
 
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24
+
+export function getSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/',
+    secure: process.env.NODE_ENV === 'production'
+  }
+}
+
+export function setSessionCookie(event: H3Event, token: string, remember: boolean) {
+  const cookieOptions = getSessionCookieOptions()
+  if (remember) {
+    setCookie(event, 'sis_session', token, {
+      ...cookieOptions,
+      maxAge: SESSION_COOKIE_MAX_AGE_SECONDS
+    })
+    return
+  }
+
+  setCookie(event, 'sis_session', token, cookieOptions)
+}
+
 export async function getSessionUser(event: H3Event) {
   const token = getCookie(event, 'sis_session')
   if (!token) {

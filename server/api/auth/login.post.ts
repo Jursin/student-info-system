@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { appendUserLog } from '../../utils/auth'
+import { appendUserLog, setSessionCookie } from '../../utils/auth'
 import { isStrongPassword, verifyPassword } from '../../utils/security'
 import { ensureStudentAccountByUserId, findUserByUserId, updateUserAuthState, upsertSessionToken } from '../../utils/store'
 
@@ -64,20 +64,7 @@ export default eventHandler(async (event) => {
     expiresAt: new Date(Date.now() + 60 * 60 * 24 * 1000)
   })
 
-  const cookieOptions = {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    path: '/'
-  }
-
-  if (remember) {
-    setCookie(event, 'sis_session', token, {
-      ...cookieOptions,
-      maxAge: 60 * 60 * 24
-    })
-  } else {
-    setCookie(event, 'sis_session', token, cookieOptions)
-  }
+  setSessionCookie(event, token, remember)
 
   await appendUserLog(user, 'login', 'auth', '用户登录系统')
 

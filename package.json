@@ -11,9 +11,10 @@
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:push": "drizzle-kit push --config=drizzle.config.ts",
-    "db:seed": "tsx server/db/seed.ts",
+    "db:seed": "dotenv tsx server/db/seed.ts",
+    "db:clear": "dotenv tsx server/db/clear.ts",
     "db:drop": "drizzle-kit drop --config=drizzle.config.ts",
-    "db:reset": "pnpm run db:drop && pnpm run db:push && pnpm run db:seed",
+    "db:reset": "pnpm run db:push && pnpm run db:clear && pnpm run db:seed",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
     "@nuxt/eslint": "^1.15.2",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.2.1",
     "tsx": "^4.21.0",

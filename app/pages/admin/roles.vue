@@ -4,6 +4,7 @@ import type { SortingState } from '@tanstack/table-core'
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import type { UserRole } from '~/types'
 import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
+import { getRequestErrorMessage } from '~/utils/error'
 import { buildSortableHeader } from '~/utils/table'
 
 definePageMeta({
@@ -292,7 +293,7 @@ function getRowItems(row: RoleUser): DropdownMenuItem[] {
       label: '删除',
       icon: 'i-lucide-trash',
       color: 'error',
-      onSelect: () => requestDeleteUser(row)
+      onSelect: () => openRoleActionConfirm('delete', [row])
     })
   }
 
@@ -456,7 +457,7 @@ async function createUser() {
     resetForm()
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '创建失败', description })
   } finally {
     creating.value = false
@@ -523,7 +524,7 @@ async function updateUser() {
     resetForm()
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '修改失败', description })
   } finally {
     updating.value = false
@@ -540,10 +541,6 @@ function openRoleActionConfirm(type: 'delete' | 'reset', rows: RoleUser[]) {
   roleActionIds.value = actionableRows.map(row => row.userId)
   roleActionNames.value = actionableRows.map(row => row.name)
   roleActionConfirmOpen.value = true
-}
-
-function requestDeleteUser(row: RoleUser) {
-  openRoleActionConfirm('delete', [row])
 }
 
 function requestDeleteSelectedUsers() {
@@ -589,7 +586,7 @@ async function confirmRoleAction() {
     roleActionConfirmOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: roleActionType.value === 'delete' ? '删除失败' : '重置密码失败', description })
   } finally {
     roleActionConfirmLoading.value = false
@@ -603,15 +600,15 @@ async function resetPassword() {
 
   resetting.value = true
   try {
-    const result = await $fetch<{ defaultPassword: string }>(`/api/admin/roles/users/${editingId.value}/password`, {
+    await $fetch(`/api/admin/roles/users/${editingId.value}/password`, {
       method: 'PUT'
     })
 
-    toast.add({ title: `已重置 ${editingId.value} 的密码为默认值 ${result.defaultPassword}` })
+    toast.add({ title: `已重置 ${editingId.value} 的密码` })
     roleFormOpen.value = false
     await refresh()
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({ color: 'error', title: '重置密码失败', description })
   } finally {
     resetting.value = false

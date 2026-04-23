@@ -43,10 +43,17 @@ pnpm install
 
 ### 配置环境变量
 
-在项目根目录复制 `.env.example` 为 `.env`，并配置数据库链接
+在项目根目录复制 `.env.example` 为 `.env`，并配置相关环境变量
+
+```env
+`DATABASE_URL`  # 数据库链接
+`SIS_BOOTSTRAP_SUPERADMIN_PASSWORD`  # 超级管理员默认密码
+`SIS_DEFAULT_ADMIN_PASSWORD`  # 管理员默认密码
+`SIS_DEFAULT_STUDENT_PASSWORD`  # 学生默认密码
+```
 
 > [!tip]
-> 请先创建好数据库
+> 请先使用 `CREATE DATABASE student_info_system;` 命令创建好数据库
 
 ### 初始化数据库
 
@@ -73,6 +80,10 @@ pnpm run dev
 > [!tip]
 > - 默认访问地址：`http://localhost:3000`
 >
+>   - 管理员登录地址：`http://localhost:3000/admin/login`
+>
+>   - 学生登录地址：`http://localhost:3000/login`
+>
 > - 使用 `pnpm run build` 构建生产版本
 >
 > - 使用 `pnpm run preview` 本地预览生产构建
@@ -85,6 +96,17 @@ pnpm run dev
 pnpm run lint
 pnpm run typecheck
 ```
+
+## Vercel 部署
+
+1. Fork 本仓库并在 Vercel 导入仓库。
+2. 在项目 Settings > Environment Variables 中配置：
+	- `DATABASE_URL`
+	- `SIS_BOOTSTRAP_SUPERADMIN_PASSWORD`
+	- `SIS_DEFAULT_ADMIN_PASSWORD`
+	- `SIS_DEFAULT_STUDENT_PASSWORD`
+3. 触发部署并等待构建完成。
+4. 首次启动后可使用超级管理员账号 `superadmin` 与你设置的 `SIS_BOOTSTRAP_SUPERADMIN_PASSWORD` 登录。
 
 ## 许可
 

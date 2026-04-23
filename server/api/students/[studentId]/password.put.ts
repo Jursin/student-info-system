@@ -1,5 +1,6 @@
 import { canManageAllStudents } from '../../../utils/access'
 import { appendUserLog, requireSessionUser } from '../../../utils/auth'
+import { getStudentDefaultPassword } from '../../../utils/password-config'
 import { hashPassword } from '../../../utils/security'
 import { getStudentProfileByUserId, updateStudentProfile } from '../../../utils/store'
 
@@ -21,9 +22,10 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 404, message: '学生不存在' })
   }
 
-  // 重置为默认密码
+  const defaultStudentPassword = getStudentDefaultPassword()
+
   const updated = await updateStudentProfile(userId, {
-    passwordHash: hashPassword('Stu1234567')
+    passwordHash: hashPassword(defaultStudentPassword)
   })
 
   if (!updated) {

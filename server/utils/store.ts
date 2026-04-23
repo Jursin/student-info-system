@@ -1,4 +1,5 @@
 import { hashPassword } from './security'
+import { getBootstrapSuperAdminPassword } from './password-config'
 import { db } from './drizzle'
 import * as schema from '../db/schema'
 import { eq, and, ilike, not, inArray, desc, asc, count as drizzleCount, gte, lte } from 'drizzle-orm'
@@ -69,18 +70,14 @@ const seedUsers: Array<{
   name: string
   className: string
   role: UserRole
-  password: string
 }> = [
   {
     userId: 'superadmin',
     name: '超级管理员',
     className: '',
-    role: 'superAdmin',
-    password: 'SuAdmin123'
+    role: 'superAdmin'
   }
 ]
-
-const seedProfiles: StudentProfile[] = []
 
 const seedTables: DynamicTable[] = [
   {
@@ -110,14 +107,6 @@ function normalizeFieldOptions(value: unknown): string[] | undefined {
   return value.filter((item): item is string => typeof item === 'string')
 }
 
-function normalizeDynamicFieldKeyFromDb(key: string): string {
-  return key === 'userId' ? 'userId' : key
-}
-
-function normalizeDynamicFieldKeyToDb(key: string): string {
-  return key === 'userId' ? 'userId' : key
-}
-
 export async function ensureSeedData(): Promise<void> {
   if (seedPromise) {
     return seedPromise
@@ -130,6 +119,8 @@ export async function ensureSeedData(): Promise<void> {
       return
     }
 
+    const bootstrapSuperAdminPassword = getBootstrapSuperAdminPassword()
+
     await db.transaction(async (tx) => {
       for (const user of seedUsers) {
         await tx.insert(schema.userAccounts).values({
@@ -137,19 +128,9 @@ export async function ensureSeedData(): Promise<void> {
           name: user.name,
           className: user.className,
           role: user.role,
-          passwordHash: hashPassword(user.password),
+          passwordHash: hashPassword(bootstrapSuperAdminPassword),
           failedAttempts: 0,
           lockUntil: null
-        })
-      }
-
-      for (const profile of seedProfiles) {
-        await tx.insert(schema.studentProfiles).values({
-          userId: profile.userId,
-          name: profile.name,
-          className: profile.className,
-          gender: profile.gender,
-          passwordHash: profile.passwordHash
         })
       }
 
@@ -418,7 +399,31 @@ export async function deleteStudentProfile(userId: string): Promise<boolean> {
 
 export async function clearStudentProfiles(): Promise<void> {
   await ensureSeedData()
-  await db.delete(schema.studentProfiles)
+
+  await db.transaction(async (tx) => {
+    const userIds = (await tx
+      .select({ userId: schema.studentProfiles.userId })
+      .from(schema.studentProfiles))
+      .map(item => item.userId)
+
+    if (!userIds.length) {
+      return
+    }
+
+    await tx.delete(schema.dynamicFieldValues)
+      .where(inArray(schema.dynamicFieldValues.userId, userIds))
+
+    await tx.delete(schema.dynamicTableRows)
+      .where(inArray(schema.dynamicTableRows.userId, userIds))
+
+    await tx.delete(schema.studentProfiles)
+
+    await tx.delete(schema.userAccounts)
+      .where(and(
+        inArray(schema.userAccounts.userId, userIds),
+        inArray(schema.userAccounts.role, ['student', 'classLeader'])
+      ))
+  })
 }
 
 export async function listDynamicTables(): Promise<DynamicTable[]> {
@@ -440,7 +445,7 @@ export async function listDynamicTables(): Promise<DynamicTable[]> {
     createdBy: table.createdBy,
     type: toTableType(table.type),
     fields: (fieldsByTableId[table.id] || []).map(field => ({
-      key: normalizeDynamicFieldKeyFromDb(field.key),
+      key: field.key,
       label: field.label,
       type: field.type as DynamicField['type'],
       limit: field.limit ?? undefined,
@@ -470,7 +475,7 @@ export async function createDynamicTable(params: {
       await tx.insert(schema.dynamicFields).values(
         params.fields.map(field => ({
           tableId: params.id,
-          key: normalizeDynamicFieldKeyToDb(field.key),
+          key: field.key,
           label: field.label,
           type: field.type,
           limit: field.limit,
@@ -499,7 +504,7 @@ export async function findDynamicTableById(id: string): Promise<DynamicTable | n
     createdBy: table.createdBy,
     type: toTableType(table.type),
     fields: fields.map(field => ({
-      key: normalizeDynamicFieldKeyFromDb(field.key),
+      key: field.key,
       label: field.label,
       type: field.type as DynamicField['type'],
       limit: field.limit ?? undefined,
@@ -535,7 +540,7 @@ export async function updateDynamicTableById(id: string, params: {
         await tx.insert(schema.dynamicFields).values(
           params.fields.map(field => ({
             tableId: id,
-            key: normalizeDynamicFieldKeyToDb(field.key),
+            key: field.key,
             label: field.label,
             type: field.type,
             limit: field.limit,
@@ -545,7 +550,7 @@ export async function updateDynamicTableById(id: string, params: {
       }
 
       const fieldKeys = params.fields
-        .map(field => normalizeDynamicFieldKeyToDb(field.key))
+        .map(field => field.key)
       if (fieldKeys.length > 0) {
         await tx.delete(schema.dynamicFieldValues)
           .where(and(

@@ -1,6 +1,7 @@
 import { canManageAllStudents } from '../../utils/access'
 import { appendUserLog, requireSessionUser } from '../../utils/auth'
 import { hashPassword } from '../../utils/security'
+import { getStudentDefaultPassword } from '../../utils/password-config'
 import {
   BASIC_INFO_TABLE_ID,
   addStudentToDynamicTable,
@@ -55,12 +56,13 @@ export default eventHandler(async (event) => {
 
   let result
   if (!existing) {
+    const defaultStudentPassword = getStudentDefaultPassword()
     result = await createStudentProfile({
       userId: userId,
       name,
       className: isBasicInfoTarget ? className || '' : '',
       gender: body.gender || '',
-      passwordHash: hashPassword('Stu1234567')
+      passwordHash: hashPassword(defaultStudentPassword)
     })
   } else {
     result = await updateStudentRecord(userId, {

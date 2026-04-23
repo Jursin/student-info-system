@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import * as z from 'zod'
 import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
+import { getRequestErrorMessage } from '~/utils/error'
 
 const toast = useToast()
 
@@ -28,7 +29,7 @@ async function updatePassword() {
     state.newPassword = ''
     toast.add({ title: '密码修改成功' })
   } catch (error: unknown) {
-    const description = (error as { data?: { message?: string } })?.data?.message || '请稍后重试'
+    const description = getRequestErrorMessage(error)
     toast.add({
       color: 'error',
       title: '密码修改失败',
