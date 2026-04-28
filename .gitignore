@@ -27,4 +27,6 @@ logs
 .history
 .vscode
 .github/skills
+.claude/
 AGENTS.md
+CLAUDE.md

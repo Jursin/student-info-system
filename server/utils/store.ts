@@ -768,6 +768,110 @@ export async function clearOperationLogs(params?: {
   return result.rowCount ?? 0
 }
 
+// ── TOTP ──
+
+export async function getTotpSecret(userId: string): Promise<string | null> {
+  await ensureSeedData()
+  const [row] = await db.select({ secret: schema.totpSecrets.secret })
+    .from(schema.totpSecrets)
+    .where(eq(schema.totpSecrets.userId, userId))
+  return row?.secret ?? null
+}
+
+export async function setTotpSecret(userId: string, secret: string): Promise<void> {
+  await ensureSeedData()
+  await db.insert(schema.totpSecrets).values({ userId, secret })
+    .onConflictDoUpdate({ target: schema.totpSecrets.userId, set: { secret } })
+}
+
+export async function deleteTotpSecret(userId: string): Promise<void> {
+  await ensureSeedData()
+  await db.delete(schema.totpSecrets).where(eq(schema.totpSecrets.userId, userId))
+}
+
+// ── Pending TOTP tokens ──
+
+export async function createPendingTotpToken(params: {
+  token: string
+  userId: string
+  expiresAt: Date
+}): Promise<void> {
+  await ensureSeedData()
+  await db.insert(schema.pendingTotpTokens).values(params)
+}
+
+export async function consumePendingTotpToken(token: string): Promise<string | null> {
+  await ensureSeedData()
+  const [row] = await db.select()
+    .from(schema.pendingTotpTokens)
+    .where(eq(schema.pendingTotpTokens.token, token))
+  if (!row) return null
+  if (row.expiresAt.getTime() <= Date.now()) {
+    await db.delete(schema.pendingTotpTokens).where(eq(schema.pendingTotpTokens.token, token))
+    return null
+  }
+  await db.delete(schema.pendingTotpTokens).where(eq(schema.pendingTotpTokens.token, token))
+  return row.userId
+}
+
+// ── Passkey credentials ──
+
+export async function getPasskeyCredentialsByUserId(userId: string) {
+  await ensureSeedData()
+  return db.select().from(schema.passkeyCredentials)
+    .where(eq(schema.passkeyCredentials.userId, userId))
+    .orderBy(asc(schema.passkeyCredentials.id))
+}
+
+export async function getPasskeyCredentialByCredentialId(credentialId: string) {
+  await ensureSeedData()
+  const [row] = await db.select().from(schema.passkeyCredentials)
+    .where(eq(schema.passkeyCredentials.credentialId, credentialId))
+  return row ?? null
+}
+
+export async function addPasskeyCredential(params: {
+  userId: string
+  credentialId: string
+  publicKey: string
+  counter: number
+  transports: string[]
+  backedUp: string
+  name: string
+  aaguid: string
+}): Promise<void> {
+  await ensureSeedData()
+  await db.insert(schema.passkeyCredentials).values({
+    userId: params.userId,
+    credentialId: params.credentialId,
+    publicKey: params.publicKey,
+    counter: params.counter,
+    transports: params.transports,
+    backedUp: params.backedUp,
+    name: params.name,
+    aaguid: params.aaguid
+  })
+}
+
+export async function updatePasskeyCredentialName(id: number, name: string): Promise<void> {
+  await ensureSeedData()
+  await db.update(schema.passkeyCredentials)
+    .set({ name })
+    .where(eq(schema.passkeyCredentials.id, id))
+}
+
+export async function deletePasskeyCredentialById(id: number): Promise<void> {
+  await ensureSeedData()
+  await db.delete(schema.passkeyCredentials).where(eq(schema.passkeyCredentials.id, id))
+}
+
+export async function updatePasskeyCredentialCounter(id: number, counter: number): Promise<void> {
+  await ensureSeedData()
+  await db.update(schema.passkeyCredentials)
+    .set({ counter })
+    .where(eq(schema.passkeyCredentials.id, id))
+}
+
 export async function listUserAccounts(params?: {
   roles?: UserRole[]
 }): Promise<UserAccount[]> {

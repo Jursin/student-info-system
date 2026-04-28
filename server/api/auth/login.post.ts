@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { appendUserLog, setSessionCookie } from '../../utils/auth'
 import { isStrongPassword, verifyPassword } from '../../utils/security'
-import { ensureStudentAccountByUserId, findUserByUserId, updateUserAuthState, upsertSessionToken } from '../../utils/store'
+import { ensureStudentAccountByUserId, findUserByUserId, updateUserAuthState, upsertSessionToken, getTotpSecret, createPendingTotpToken } from '../../utils/store'
 
 interface LoginBody {
   userId: string
@@ -56,6 +56,22 @@ export default eventHandler(async (event) => {
     failedAttempts: 0,
     lockUntil: null
   })
+
+  // Check if user has TOTP enabled
+  const totpSecret = await getTotpSecret(user.userId)
+  if (totpSecret) {
+    const totpToken = randomUUID()
+    await createPendingTotpToken({
+      token: totpToken,
+      userId: user.userId,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000)
+    })
+
+    return {
+      requiresTotp: true,
+      totpToken
+    }
+  }
 
   const token = randomUUID()
   await upsertSessionToken({

@@ -136,3 +136,35 @@ export const sessionTokensRelations = relations(sessionTokens, ({ one }) => ({
     references: [userAccounts.userId]
   })
 }))
+
+export const totpSecrets = pgTable('totp_secrets', {
+  userId: text('user_id').primaryKey().references(() => userAccounts.userId, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  secret: text('secret').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+})
+
+export const pendingTotpTokens = pgTable('pending_totp_tokens', {
+  token: text('token').primaryKey(),
+  userId: text('user_id').references(() => userAccounts.userId, { onDelete: 'cascade', onUpdate: 'cascade' }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+}, table => [
+  index('pending_totp_tokens_user_id_idx').on(table.userId),
+  index('pending_totp_tokens_expires_at_idx').on(table.expiresAt)
+])
+
+export const passkeyCredentials = pgTable('passkey_credentials', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').references(() => userAccounts.userId, { onDelete: 'cascade', onUpdate: 'cascade' }).notNull(),
+  credentialId: text('credential_id').notNull().unique(),
+  publicKey: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  transports: jsonb('transports').default([]),
+  backedUp: text('backed_up').notNull().default('false'),
+  name: text('name').notNull().default(''),
+  aaguid: text('aaguid').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+}, table => [
+  index('passkey_credentials_credential_id_idx').on(table.credentialId),
+  index('passkey_credentials_user_id_idx').on(table.userId)
+])

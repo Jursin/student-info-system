@@ -69,6 +69,7 @@ const links = computed<NavigationMenuItem[][]>(() => {
       collapsible
       resizable
       class="bg-elevated/25"
+      style="min-width: 13rem; max-width: 24rem;"
       :ui="{ footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
