@@ -2,7 +2,7 @@ import { isSuperAdmin } from '../../../../../utils/access'
 import { appendUserLog, requireSessionUser } from '../../../../../utils/auth'
 import { getAdminDefaultPassword, getStudentDefaultPassword } from '../../../../../utils/password-config'
 import { hashPassword } from '../../../../../utils/security'
-import { findUserByUserId, updateUserAuthState } from '../../../../../utils/store'
+import { findUserByUserId, updateUserAuthState, deleteTotpSecret, deleteAllPasskeyCredentialsByUserId } from '../../../../../utils/store'
 
 export default eventHandler(async (event) => {
   const user = await requireSessionUser(event)
@@ -37,7 +37,11 @@ export default eventHandler(async (event) => {
     passwordHash: hashPassword(defaultPassword)
   })
 
-  await appendUserLog(user, 'update', 'roles', `重置角色用户 ${userId} 的密码为默认值`)
+  // 同时重置 TOTP 和通行密钥
+  await deleteTotpSecret(userId)
+  await deleteAllPasskeyCredentialsByUserId(userId)
+
+  await appendUserLog(user, 'update', 'roles', `重置角色用户 ${userId} 的密码、TOTP和通行密钥为默认值`)
 
   return { success: true }
 })

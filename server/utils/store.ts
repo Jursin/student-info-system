@@ -865,6 +865,11 @@ export async function deletePasskeyCredentialById(id: number): Promise<void> {
   await db.delete(schema.passkeyCredentials).where(eq(schema.passkeyCredentials.id, id))
 }
 
+export async function deleteAllPasskeyCredentialsByUserId(userId: string): Promise<void> {
+  await ensureSeedData()
+  await db.delete(schema.passkeyCredentials).where(eq(schema.passkeyCredentials.userId, userId))
+}
+
 export async function updatePasskeyCredentialCounter(id: number, counter: number): Promise<void> {
   await ensureSeedData()
   await db.update(schema.passkeyCredentials)

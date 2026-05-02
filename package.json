@@ -15,7 +15,8 @@
     "db:clear": "dotenv tsx server/db/clear.ts",
     "db:drop": "drizzle-kit drop --config=drizzle.config.ts",
     "db:reset": "pnpm run db:push && pnpm run db:clear && pnpm run db:seed",
-    "db:studio": "drizzle-kit studio --config=drizzle.config.ts"
+    "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
+    "reset-superadmin": "dotenv tsx server/db/reset-superadmin.ts"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.102",

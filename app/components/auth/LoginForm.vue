@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
+import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 
 const props = withDefaults(defineProps<{
@@ -16,37 +17,75 @@ const toast = useToast()
 const { login, loginAdmin, verifyTotp, loginWithPasskey, pendingTotp } = useAuth()
 
 const loading = ref(false)
-const rememberLogin = ref(false)
-const showPassword = ref(false)
-const accountLabel = computed(() => props.mode === 'admin' ? '用户名' : '学号')
-
-// TOTP state
-const totpCode = ref('')
 const totpVerifying = ref(false)
 
-// The login form schema
+const showTotpStep = computed(() => pendingTotp.value !== null)
+
+const accountLabel = computed(() => props.mode === 'admin' ? '用户名' : '学号')
+
 const schema = z.object({
   userId: z.string().min(1, '请输入账号'),
-  password: z.string().min(10, '密码至少10位，需包含大小写字母和数字')
+  password: z.string().min(10, '密码至少10位，需包含大小写字母和数字'),
+  rememberLogin: z.boolean().default(false)
 })
 
 type Schema = z.output<typeof schema>
 
-const state = reactive<Schema>({
-  userId: '',
-  password: ''
+const totpSchema = z.object({
+  totpCode: z.union([
+    z.string().length(6, '请输入6位验证码'),
+    z.array(z.string()).length(6, '请输入6位验证码').transform(arr => arr.join(''))
+  ]).catch('请输入6位验证码')
 })
 
-// Show TOTP step when pendingTotp is set
-const showTotpStep = computed(() => pendingTotp.value !== null)
+type TotpSchema = z.output<typeof totpSchema>
 
-async function onSubmit() {
+const totpFields: AuthFormField[] = [
+  {
+    name: 'totpCode',
+    type: 'otp',
+    label: '验证码',
+    length: 6
+  }
+]
+
+const loginFields = computed<AuthFormField[]>(() => {
+  const label = accountLabel.value
+  return [
+    {
+      name: 'userId',
+      type: 'text',
+      label,
+      placeholder: `请输入${label}`,
+      required: true,
+      defaultValue: ''
+    },
+    {
+      name: 'password',
+      type: 'password',
+      label: '密码',
+      placeholder: '请输入密码',
+      required: true,
+      defaultValue: ''
+    },
+    {
+      name: 'rememberLogin',
+      type: 'checkbox',
+      label: '记住登录状态',
+      defaultValue: false
+    }
+  ]
+})
+
+async function onSubmit(event: FormSubmitEvent<Schema>) {
   loading.value = true
   try {
+    const { userId, password, rememberLogin } = event.data
+
     if (props.mode === 'admin') {
-      await loginAdmin(state.userId, state.password, rememberLogin.value)
+      await loginAdmin(userId, password, rememberLogin)
     } else {
-      await login(state.userId, state.password, rememberLogin.value)
+      await login(userId, password, rememberLogin)
     }
 
     if (!showTotpStep.value) {
@@ -65,12 +104,10 @@ async function onSubmit() {
   }
 }
 
-async function onSubmitTotp() {
-  if (!totpCode.value || totpCode.value.length !== 6) return
-
+async function onTotpSubmit(event: FormSubmitEvent<TotpSchema>) {
   totpVerifying.value = true
   try {
-    await verifyTotp(totpCode.value)
+    await verifyTotp(event.data.totpCode)
     toast.add({ title: '登录成功' })
     emit('success')
   } catch (error: unknown) {
@@ -101,11 +138,6 @@ async function onPasskeyLogin() {
     })
   }
 }
-
-function cancelTotp() {
-  pendingTotp.value = null
-  totpCode.value = ''
-}
 </script>
 
 <template>
@@ -126,86 +158,44 @@ function cancelTotp() {
     </template>
 
     <!-- Password login form -->
-    <UForm
+    <UAuthForm
       v-if="!showTotpStep"
+      :fields="loginFields"
       :schema="schema"
-      :state="state"
-      class="space-y-4"
-      @submit="onSubmit"
+      :submit="{ label: '登录' }"
+      :loading="loading"
+      :on-submit="onSubmit as any"
     >
-      <UFormField :label="accountLabel" name="userId">
-        <UInput v-model="state.userId" :placeholder="`请输入${accountLabel}`" class="w-full" />
-      </UFormField>
-
-      <UFormField label="密码" name="password">
-        <UInput
-          v-model="state.password"
-          :type="showPassword ? 'text' : 'password'"
-          placeholder="请输入密码"
-          class="w-full"
-        >
-          <template #trailing>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              :icon="showPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-              :aria-label="showPassword ? '隐藏密码' : '显示密码'"
-              @click="showPassword = !showPassword"
-            />
-          </template>
-        </UInput>
-      </UFormField>
-
-      <UCheckbox v-model="rememberLogin" label="记住登录状态" />
-
-      <UButton type="submit" block :loading="loading">
-        登录
-      </UButton>
-
-      <div class="my-4">
-        <div class="flex items-center text-xs uppercase">
-          <span class="flex-1 border-t border-muted-foreground/20"></span>
-          <span class="mx-2 bg-card text-muted whitespace-nowrap">或</span>
-          <span class="flex-1 border-t border-muted-foreground/20"></span>
+      <template #footer>
+        <div class="my-4">
+          <div class="flex items-center text-xs uppercase">
+            <span class="flex-1 border-t border-muted-foreground/20" />
+            <span class="mx-2 bg-card text-muted whitespace-nowrap">或</span>
+            <span class="flex-1 border-t border-muted-foreground/20" />
+          </div>
         </div>
-      </div>
 
-      <UButton variant="outline" block @click="onPasskeyLogin">
-        <UIcon name="i-lucide-key-round" />
-        使用通行密钥登录
-      </UButton>
-    </UForm>
+        <UButton variant="outline" block @click="onPasskeyLogin">
+          <UIcon name="i-lucide-key-round" />
+          使用通行密钥登录
+        </UButton>
+      </template>
+    </UAuthForm>
 
     <!-- TOTP verification step -->
-    <div v-else class="space-y-4">
-      <p class="text-sm text-muted">
-        此账号已启用两步验证，请输入认证器应用中显示的验证码。
-      </p>
-
-      <UFormField label="验证码" name="totpCode">
-        <UInput
-          v-model="totpCode"
-          placeholder="输入6位验证码"
-          class="w-full text-center text-lg tracking-widest"
-          maxlength="6"
-          @keypress.enter="onSubmitTotp"
-        />
-      </UFormField>
-
-      <div class="flex gap-2">
-        <UButton variant="outline" class="flex-1 justify-center items-center" @click="cancelTotp">
-          返回
-        </UButton>
-        <UButton
-          class="flex-1 justify-center items-center"
-          :disabled="totpCode.length !== 6"
-          :loading="totpVerifying"
-          @click="onSubmitTotp"
-        >
-          验证
-        </UButton>
-      </div>
-    </div>
+    <UAuthForm
+      v-else
+      :fields="totpFields"
+      :schema="totpSchema"
+      :submit="{ label: '验证' }"
+      :loading="totpVerifying"
+      :on-submit="onTotpSubmit as any"
+    >
+      <template #description>
+        <p class="text-sm text-muted text-left">
+          此账号已启用两步验证，请输入认证器应用中显示的验证码。
+        </p>
+      </template>
+    </UAuthForm>
   </UCard>
 </template>
