@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NuxtError } from '#app'
+import { zh_cn } from '@nuxt/ui/locale'
 
 defineProps<{
   error: NuxtError
@@ -18,7 +19,7 @@ useHead({
 </script>
 
 <template>
-  <UApp>
+  <UApp :locale="zh_cn">
     <UError
       :clear="{
         label: '回到首页'

@@ -20,7 +20,7 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: '验证码错误' })
   }
 
-  // Only save to DB after successful verification
+  // 验证成功后写入数据库
   await setTotpSecret(user.userId, body.secret)
 
   return { success: true }

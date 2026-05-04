@@ -57,7 +57,7 @@ export default eventHandler(async (event) => {
     lockUntil: null
   })
 
-  // Check if user has TOTP enabled
+  // 检查用户是否已启用两步验证
   const totpSecret = await getTotpSecret(user.userId)
   if (totpSecret) {
     const totpToken = randomUUID()

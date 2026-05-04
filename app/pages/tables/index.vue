@@ -4,7 +4,6 @@ import { getPaginationRowModel, type Row, type SortingState } from '@tanstack/ta
 
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import type { DynamicTable } from '~/types'
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import { buildSortableHeader } from '~/utils/table'
 
 type TableRow = {
@@ -641,7 +640,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else />
           <UPagination
-            :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+            :page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
             :items-per-page="tableRef?.tableApi?.getState().pagination.pageSize"
             :total="tableRef?.tableApi?.getFilteredRowModel().rows.length"
             @update:page="p => tableRef?.tableApi?.setPageIndex(p - 1)"

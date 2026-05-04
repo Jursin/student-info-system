@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import * as z from 'zod'
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import { getRequestErrorMessage } from '~/utils/error'
 
 const toast = useToast()
@@ -42,7 +41,7 @@ const disableTotpConfirmOpen = ref(false)
 const disableTotpConfirmLoading = ref(false)
 
 async function checkTotpStatus() {
-  const { enabled } = await $fetch('/api/me/totp/status')
+  const { enabled } = await $fetch<{ enabled: boolean }>('/api/me/totp/status')
   if (enabled) {
     totpState.value = 'on'
   }
@@ -51,7 +50,7 @@ async function checkTotpStatus() {
 async function enableTotp() {
   if (totpState.value !== 'off') return
   totpState.value = 'setup'
-  const res = await $fetch('/api/me/totp/setup', { method: 'POST' }) as { secret: string, otpauth: string }
+  const res = await $fetch<{ secret: string, otpauth: string }>('/api/me/totp/setup', { method: 'POST' })
   totpSecret.value = res.secret
   const QRCode = (await import('qrcode')).default
   totpQrDataUrl.value = await QRCode.toDataURL(res.otpauth)
@@ -106,7 +105,7 @@ const passkeyLoading = ref(false)
 async function loadPasskeys() {
   passkeyLoading.value = true
   try {
-    passkeys.value = await $fetch('/api/me/passkey')
+    passkeys.value = await $fetch<PasskeyEntry[]>('/api/me/passkey')
   } finally {
     passkeyLoading.value = false
   }
@@ -216,7 +215,7 @@ onMounted(() => {
 
     <template #body>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-none">
-        <!-- Password change -->
+        <!-- 修改密码 -->
         <UCard>
           <template #header>
             <h2 class="text-lg font-semibold text-highlighted">
@@ -254,7 +253,7 @@ onMounted(() => {
           </UForm>
         </UCard>
 
-        <!-- Passkeys -->
+        <!-- 通行密钥 -->
         <UCard>
           <template #header>
             <h2 class="text-lg font-semibold text-highlighted">
@@ -315,7 +314,7 @@ onMounted(() => {
           </div>
         </UCard>
 
-        <!-- TOTP 2FA -->
+        <!-- 两步验证 -->
         <UCard>
           <template #header>
             <h2 class="text-lg font-semibold text-highlighted">
@@ -360,8 +359,8 @@ onMounted(() => {
 
           <div v-else class="space-y-3">
             <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-shield-check" class="size-5 text-green-600" />
-              <span class="text-sm text-green-600 font-medium">两步验证已启用</span>
+              <UIcon name="i-lucide-shield-check" class="size-5 text-success" />
+              <span class="text-sm text-success font-medium">两步验证已启用</span>
             </div>
             <p class="text-sm text-muted">
               下次登录时除密码外还需输入认证器应用生成的动态验证码，提升账号安全性。
@@ -375,7 +374,7 @@ onMounted(() => {
     </template>
   </UDashboardPanel>
 
-  <!-- Confirm disable 2FA -->
+  <!-- 确认禁用两步验证 -->
   <UModal v-model:open="disableTotpConfirmOpen" title="确认禁用">
     <template #body>
       <p class="text-sm text-muted">
@@ -399,7 +398,7 @@ onMounted(() => {
     </template>
   </UModal>
 
-  <!-- Confirm delete passkey -->
+  <!-- 确认删除通行密钥 -->
   <UModal v-model:open="deletePasskeyConfirmOpen" title="确认删除">
     <template #body>
       <p class="text-sm text-muted">
@@ -423,7 +422,7 @@ onMounted(() => {
     </template>
   </UModal>
 
-  <!-- Passkey name modal (for both new and rename) -->
+  <!-- 通行密钥命名弹窗（新建和重命名共用） -->
   <UModal v-model:open="passkeyNameModalOpen" :title="passkeyNameCredentialId && passkeys.some(p => p.id === passkeyNameCredentialId) ? '重命名通行密钥' : '设置通行密钥名称'">
     <template #body>
       <UFormField label="名称" name="passkeyName">

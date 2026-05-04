@@ -3,7 +3,6 @@ import { getPaginationRowModel } from '@tanstack/table-core'
 import type { SortingState } from '@tanstack/table-core'
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import type { UserRole } from '~/types'
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import { getRequestErrorMessage } from '~/utils/error'
 import { buildSortableHeader } from '~/utils/table'
 
@@ -711,7 +710,7 @@ async function submitRoleForm() {
             {{ selectedActionableCount }} / {{ tableRef?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
           </div>
           <UPagination
-            :default-page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+            :page="(tableRef?.tableApi?.getState().pagination.pageIndex || 0) + 1"
             :items-per-page="tableRef?.tableApi?.getState().pagination.pageSize"
             :total="tableRef?.tableApi?.getFilteredRowModel().rows.length"
             @update:page="p => tableRef?.tableApi?.setPageIndex(p - 1)"

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useToast } from '@nuxt/ui/composables/useToast'
 import { getPaginationRowModel, type Row, type SortingState } from '@tanstack/table-core'
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import * as XLSX from 'xlsx'
@@ -1175,7 +1174,7 @@ onBeforeUnmount(() => {
             {{ table?.tableApi?.getFilteredSelectedRowModel().rows.length || 0 }} / {{ table?.tableApi?.getFilteredRowModel().rows.length || 0 }} 已选择
           </div>
           <UPagination
-            :default-page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+            :page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
             :items-per-page="table?.tableApi?.getState().pagination.pageSize"
             :total="table?.tableApi?.getFilteredRowModel().rows.length"
             @update:page="p => table?.tableApi?.setPageIndex(p - 1)"

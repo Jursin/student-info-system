@@ -552,7 +552,6 @@ function updateTrendCustomEnd(value: unknown) {
         <UModal
           v-model:open="customRangeOpen"
           title="自定义日期范围"
-          :portal="true"
           :ui="{ content: 'max-w-xl' }"
         >
           <template #body>

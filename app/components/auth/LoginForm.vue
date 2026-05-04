@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 
@@ -22,6 +21,12 @@ const totpVerifying = ref(false)
 const showTotpStep = computed(() => pendingTotp.value !== null)
 
 const accountLabel = computed(() => props.mode === 'admin' ? '用户名' : '学号')
+const formTitle = computed(() => props.mode === 'admin' ? '管理员登录' : '学生登录')
+const formIcon = computed(() => props.mode === 'admin' ? 'i-lucide-shield-user' : 'i-lucide-user-round')
+const formDescription = computed(() => {
+  if (showTotpStep.value) return '请输入两步验证码'
+  return props.mode === 'admin' ? '请使用管理员用户名和密码登录' : '请使用学号和密码登录'
+})
 
 const schema = z.object({
   userId: z.string().min(1, '请输入账号'),
@@ -71,8 +76,7 @@ const loginFields = computed<AuthFormField[]>(() => {
     {
       name: 'rememberLogin',
       type: 'checkbox',
-      label: '记住登录状态',
-      defaultValue: false
+      label: '记住登录状态'
     }
   ]
 })
@@ -150,16 +154,19 @@ async function onPasskeyLogin() {
             <span>学生信息管理系统</span>
           </h1>
           <p class="text-sm text-muted">
-            {{ showTotpStep ? '请输入两步验证码' : (props.mode === 'admin' ? '请使用管理员用户名和密码登录' : '请使用学号和密码登录') }}
+            一站式学生信息管理系统网站
           </p>
         </div>
         <UColorModeButton />
       </div>
     </template>
 
-    <!-- Password login form -->
+    <!-- 密码登录表单 -->
     <UAuthForm
       v-if="!showTotpStep"
+      :title="formTitle"
+      :description="formDescription"
+      :icon="formIcon"
       :fields="loginFields"
       :schema="schema"
       :submit="{ label: '登录' }"
@@ -167,22 +174,16 @@ async function onPasskeyLogin() {
       :on-submit="onSubmit as any"
     >
       <template #footer>
-        <div class="my-4">
-          <div class="flex items-center text-xs uppercase">
-            <span class="flex-1 border-t border-muted-foreground/20" />
-            <span class="mx-2 bg-card text-muted whitespace-nowrap">或</span>
-            <span class="flex-1 border-t border-muted-foreground/20" />
-          </div>
-        </div>
+        <USeparator label="或" class="my-4" />
 
         <UButton variant="outline" block @click="onPasskeyLogin">
-          <UIcon name="i-lucide-key-round" />
+          <UIcon name="i-lucide-user-key" />
           使用通行密钥登录
         </UButton>
       </template>
     </UAuthForm>
 
-    <!-- TOTP verification step -->
+    <!-- 两步验证步骤 -->
     <UAuthForm
       v-else
       :fields="totpFields"

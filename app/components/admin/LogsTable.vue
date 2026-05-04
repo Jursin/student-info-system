@@ -3,7 +3,6 @@ import { getPaginationRowModel } from '@tanstack/table-core'
 import type { SortingState } from '@tanstack/table-core'
 import type { TableColumn } from '@nuxt/ui'
 import type { OperationLog } from '~/types'
-import { useToast } from '@nuxt/ui/runtime/composables/useToast.js'
 import { fromDateValue, toDateValue } from '~/utils/date'
 import { buildSortableHeader } from '~/utils/table'
 
@@ -215,7 +214,7 @@ onBeforeUnmount(() => {
 
     <div class="flex items-center justify-end gap-3 border-t border-default pt-4">
       <UPagination
-        :default-page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
+        :page="(table?.tableApi?.getState().pagination.pageIndex || 0) + 1"
         :items-per-page="table?.tableApi?.getState().pagination.pageSize"
         :total="table?.tableApi?.getFilteredRowModel().rows.length"
         @update:page="p => table?.tableApi?.setPageIndex(p - 1)"
